@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dalil"
+version = "0.1.0"
+description = "Arabic-first retrieval over classical Islamic texts, returning cited passages"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=2.0",
+    "faiss-cpu>=1.10",   # 1.10+ for IO_FLAG_MMAP_IFC
+    "requests>=2.31",
+    "lxml>=5.0",         # extractor HTML cleanup; output differs without it
+    "jsonschema>=4.18",
+]
+
+[project.optional-dependencies]
+# GPU embedding (dalil.s6_embed) and Qwen token counts (dalil.s7_index.append, dalil.s5_audit.token_stats)
+embed = ["torch>=2.3", "sentence-transformers>=3.0", "transformers>=4.51"]
+dev = ["pytest>=8"]
+
+[project.scripts]
+dalil-search = "dalil.s8_search.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["dalil*"]
+
+[tool.setuptools.package-data]
+"dalil.s4_extract" = ["schemas/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

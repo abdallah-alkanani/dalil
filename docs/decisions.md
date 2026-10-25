@@ -1,0 +1,89 @@
+# Decisions
+
+Each decision names the code that implements it.
+
+## Corpus shape
+
+- **Three layers.** Elements hold the structure, parents are the units shown and cited, and
+  retrieval views are the packs that get embedded. Each view has one parent.
+- **Parents are cut only at boundaries in the text.** The boundaries are headings, speaker
+  turns, inline headings, section markers and recorded semantic boundaries
+  (`dalil/s4_extract/boundaries.py`, `sections.py`). A parent with no boundary stays whole and
+  gets `needs_semantic_split`.
+- **Size constants.** Parents target 15,000 words and are considered for cuts above 22,500
+  (`PARENT_TARGET_WORDS`, `PARENT_SPLIT_ABOVE` in `boundaries.py`).
+- **Speaker turns.** A text is split at speaker labels only if it has at least three turns and
+  averages at most 2,000 words per turn. Splitting starts above 4,000 words; an exchange has
+  a minimum of 250 words and a target of 1,200 (`dalil/s4_extract/dialogue.py`).
+- **Pack sizes.** Sections are packed into paragraphs of at most 256 words by default
+  (`emit_section` in `sections.py`). Plain-text core profiles pack at 420 words
+  (`parse_text_profile`), tafsir commentary views at 360 words and tafsir segments at 1,400
+  (`core_corpus.py`). Hadith full, sanad and matn views are whole up to 800
+  words, then split into 360-word clauses. Fatwa answers are at most 800 words.
+- **Inline headings.** A `[فصل ...]` heading inside a line counts only when the bracket opens
+  with a structural keyword, so `[البقرة: 255]` is not a heading
+  (`dalil/s4_extract/detectors/inline_headings.py`).
+- **Embedding text.** Every view is embedded with a header: `الكتاب` (book title),
+  `التصنيف` (category), `الموضع` (section path), `نوع النص` (text role), then `النص`
+  (`dalil/s4_extract/records.py`).
+- **Shamela footnotes** are added beside the body. Each becomes a `footnote` view
+  (`{view_key}:fn:NNN`), and a `الحواشي:` block is appended to the parent's
+  `text_for_synthesis`. A footnote is placed by the words around its marker, and the
+  `[عند: «…»]` label quotes the six words before the marker
+  (`dalil/s4_extract/sources/shamela_footnotes.py`).
+- **Torn definite articles.** `ا لجواب` is joined back to `الجواب` only when the alif
+  follows no Arabic letter and the next word does not already start with lam
+  (`dalil/s4_extract/records.py`).
+- **Empty parents.** An empty parent is dropped only when its title repeats the next
+  parent's title (`drop_empty_duplicates` in `dalil/s4_extract/collection.py`).
+- **Short verses.** A view with fewer than 3 Arabic letters is not embedded, except
+  `ayah_exact` views (`too_little_arabic` in `dalil/s6_embed/embed_views.py`).
+
+## Search
+
+- **Shared normalisation.** `dalil/arabic/normalize.py` is used for both the index and the
+  query. It strips tashkeel, folds `أ إ آ ٱ` to `ا`, and maps `ک` and `ی` to Arabic letters.
+  It does not fold `ى`, `ؤ`, `ئ` or `ة`, because folding would merge different words (the
+  module names `على`/`علي` and `رحمة`/`رحمه`). `records.normalize_arabic` folds them, and
+  search does not use it.
+- **Hybrid fusion.** BM25 and dense rankings are fused per parent with weighted reciprocal-rank
+  fusion: k=60, dense weight 0.65, BM25 weight 0.35. A parent is scored by its best child
+  (`dalil/s8_search/ranking.py`, `engine.py`).
+- **After fusion.** A source-category prior, then MMR with lambda 0.7 over the top 80 parents.
+  An optional listwise rerank covers the top 20 (`LISTWISE_DEPTH`). Listwise rerank is off by
+  default.
+- **Query planning** is off by default. When it is on, the exact question is always variant
+  `Q0`, a critic rejects variants that drift to another question, and a planner failure falls
+  back to the question (`dalil/s8_search/planning.py`).
+- **Dense search** is an exact `IndexFlatIP`. The index is scored in blocks of 32,768 vectors
+  (512 MB at 4,096 float32 each) with `faiss.knn`, and the block results are merged with
+  `faiss.ResultHeap`. Blocks are read with O_DIRECT when the index does not fit in the page
+  cache (`dalil/s8_search/dense.py`).
+- **BM25 freshness** is checked against FTS5's `docsize` table, not by counting rows
+  (`dalil/s7_index/bm25.py`). `append` refuses to run when `bm25.sqlite` is out of step.
+
+## Pipeline
+
+- **The database is rebuilt, not patched.** `run_build.sh` removes `db/` and appends every
+  corpus into empty stores. `REUSE_DB` only supplies vectors for text that has not changed
+  (`dalil/build/run_build.sh`, `dalil/s6_embed/reuse.py`).
+- **Vectors are matched by hash.** A vector is reused when the 16-byte BLAKE2b hash of
+  `embedding_text` matches (`dalil/s6_embed/reuse.py`).
+- **Embedding is sharded.** A shard holds 2,000 views and is saved as it completes; completed
+  shards are skipped on restart (`dalil/s6_embed/embed_views.py`).
+- **Embedding engine.** `--engine vllm` runs the model in bf16 with `runner="pooling"`. It
+  needs its own Python environment, given to `run_build.sh` as `EMBED_PY`.
+- **An LLM judges structure, and code cuts.** Nothing in `dalil/s4_extract` imports
+  `dalil.llm`. The parent policy and the boundary decisions are written to files, which the
+  extractor reads.
+- **Semantic boundaries** are asked in 8,000-word chunks (`--chunk-words`). A failed chunk is
+  recorded as `partial: true` with `missing_ranges`, and a `--regap` run asks only for those
+  ranges (`dalil/s3_structure/semantic_boundaries.py`).
+- **Anchors** are matched on normalised tokens. A cut is applied only when its anchor is found
+  in the text (`normalize_for_search`, `split_at_anchors`).
+- **`max_tokens` on LLM calls.** The OpenRouter transport sends `max_tokens` only when a
+  caller passes it (`dalil/llm/openrouter.py`). The extraction-side stages (`s3_structure`,
+  `s5_audit`) pass none. The query planner and critic pass 900 and 500
+  (`dalil/s8_search/engine.py`).
+- **opencode CLI runs with every tool denied.** Each call gets a private configuration whose
+  only rule denies all tools, and runs with `--standalone` (`dalil/llm/opencode_cli.py`).

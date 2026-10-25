@@ -1,0 +1,60 @@
+# Data: corpora, search stores, vectors, benchmarks (never committed)
+/data/
+
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials*.json
+secrets*.json
+
+# Python, environments, tools
+__pycache__/
+*.py[cod]
+*.egg-info/
+/build/
+/dist/
+.venv*/
+venv*/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+.idea/
+.vscode/
+.DS_Store
+._*
+
+# Large or generated artifacts, wherever they appear
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.db
+*.db-*
+*.index
+*.faiss
+*.npy
+*.npz
+*.pkl
+*.pickle
+*.parquet
+*.safetensors
+*.gguf
+*.bin
+*.pt
+*.onnx
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+*.pdf
+*.doc
+*.docx
+*.log
+*.bak*
+
+# The rebuild recipe ships with the data, not the code
+/recipe/

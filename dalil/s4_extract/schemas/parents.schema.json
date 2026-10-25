@@ -1,0 +1,425 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dalil:schema:parents",
+  "title": "Dalil corpus parent",
+  "description": "One canonical return/citation unit. Parents are stored in the docstore and are fetched after retrieval-view hits are grouped by parent_id.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "parent_id",
+    "book_id",
+    "work_id",
+    "author_id",
+    "category",
+    "subcategory",
+    "parent_type",
+    "source_element_ids",
+    "ancestor_ids",
+    "section_path",
+    "section_path_ids",
+    "refs",
+    "text_for_synthesis",
+    "text_original",
+    "normalized_text",
+    "citation",
+    "child_view_ids",
+    "token_counts",
+    "parser_profile",
+    "parent_policy",
+    "view_policy",
+    "quality_flags"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "dalil.parent.v1"
+    },
+    "parent_id": {
+      "type": "string",
+      "pattern": "^parent:"
+    },
+    "book_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "work_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "author_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "category": {
+      "$ref": "#/$defs/category"
+    },
+    "subcategory": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "parent_type": {
+      "type": "string",
+      "enum": [
+        "quran_ayah",
+        "hadith",
+        "tafsir_ayah_commentary",
+        "irab_ayah_commentary",
+        "heading_section",
+        "numbered_item",
+        "paragraph_group",
+        "qanda",
+        "fatwa",
+        "fatwa_masala",
+        "poem_verse",
+        "lesson",
+        "risala",
+        "treatise",
+        "takhrij_record",
+        "tape_section",
+        "bab_section",
+        "dialogue_exchange"
+      ]
+    },
+    "source_element_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^elem:"
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "ancestor_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^(elem:|parent:)"
+      },
+      "uniqueItems": true
+    },
+    "section_path": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "section_path_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "refs": {
+      "$ref": "#/$defs/refs"
+    },
+    "text_for_synthesis": {
+      "type": "string"
+    },
+    "text_original": {
+      "type": "string"
+    },
+    "normalized_text": {
+      "type": "string"
+    },
+    "citation": {
+      "type": "string"
+    },
+    "child_view_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^view:"
+      },
+      "uniqueItems": true
+    },
+    "token_counts": {
+      "$ref": "#/$defs/token_counts"
+    },
+    "parser_profile": {
+      "$ref": "#/$defs/parser_profile"
+    },
+    "parent_policy": {
+      "$ref": "#/$defs/parent_policy"
+    },
+    "view_policy": {
+      "$ref": "#/$defs/view_policy"
+    },
+    "quality_flags": {
+      "$ref": "#/$defs/string_list"
+    }
+  },
+  "$defs": {
+    "category": {
+      "type": "string",
+      "enum": [
+        "quran",
+        "hadith",
+        "tafsir",
+        "fiqh",
+        "fiqh_usul",
+        "aqeedah",
+        "seerah"
+      ]
+    },
+    "parser_profile": {
+      "type": "string",
+      "enum": [
+        "quran_json_parser",
+        "hadith_json_parser",
+        "hadith_flat_json_parser",
+        "musnad_csv_parser",
+        "tafsir_json_parser",
+        "openiti_txt_parser",
+        "shamela_txt_parser",
+        "shamela_json_records_parser",
+        "saaid_txt_parser",
+        "plain_text_fallback",
+        "shamela4_json_parser",
+        "ketabonline_json_parser",
+        "ibn_baz_fatwa_jsonl_parser"
+      ]
+    },
+    "parent_policy": {
+      "type": "string",
+      "enum": [
+        "quran_ayah_parent_v1",
+        "hadith_parent_v1",
+        "tafsir_ayah_commentary_parent_v1",
+        "irab_ayah_commentary_parent_v1",
+        "heading_section_parent_v1",
+        "numbered_item_parent_v1",
+        "paragraph_group_parent_v1",
+        "monograph_prose_parent_v1",
+        "poem_verse_parent_v1",
+        "whole_book_parent_v1",
+        "fatwa_masala_parent_v1",
+        "tafsir_sura_ayat_parent_v1",
+        "shamela_heading_section_parent_v1",
+        "shamela_hadith_record_parent_v1",
+        "qanda_pair_parent_v1",
+        "tafsir_ayah_parent_v1",
+        "tafsir_ayah_block_parent_v1",
+        "shamela_lesson_per_page_parent_v1",
+        "shamela_numbered_item_parent_v1",
+        "risala_collection_parent_v1",
+        "shamela_qa_section_parent_v1",
+        "shamela_indexed_hadith_parent_v1",
+        "shamela_toc_anchored_section_parent_v1",
+        "poem_numbered_verse_parent_v1",
+        "matn_numbered_point_parent_v1",
+        "shamela_qanda_per_question_parent_v1",
+        "shamela_single_unit_parent_v1",
+        "shamela_bab_hadith_parent_v1",
+        "ketabonline_heading_section_parent_v1",
+        "ketabonline_qa_section_parent_v1",
+        "ketabonline_tape_section_parent_v1",
+        "ketabonline_hadith_record_parent_v1",
+        "ketabonline_bab_section_parent_v1",
+        "ketabonline_hadith_section_parent_v1",
+        "ketabonline_takhrij_record_parent_v1",
+        "fatwa_record_parent_v1"
+      ]
+    },
+    "view_policy": {
+      "type": "string",
+      "enum": [
+        "ayah_exact_view_v1",
+        "hadith_multiview_v1",
+        "commentary_paragraph_view_v1",
+        "paragraph_pack_view_v1",
+        "heading_title_view_v1",
+        "ketabonline_paragraph_pack_view_v1",
+        "fatwa_multiview_v1",
+        "lecture_multiview_v1",
+        "qanda_pair_pack_view_v1",
+        "tafsir_ayah_pack_view_v1",
+        "ayah_commentary_view_v1",
+        "numbered_item_pack_view_v1",
+        "hadith_item_view_v1",
+        "poem_verse_pair_view_v1",
+        "lesson_paragraph_pack_view_v1",
+        "verse_couplets_view_v1",
+        "matn_point_with_commentary_view_v1",
+        "fatwa_pack_view_v1",
+        "qanda_pair_view_v1"
+      ]
+    },
+    "refs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "quran",
+        "hadith",
+        "openiti",
+        "source_record"
+      ],
+      "properties": {
+        "quran": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": false,
+          "required": [
+            "surah",
+            "ayah_start",
+            "ayah_end"
+          ],
+          "properties": {
+            "surah": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 114
+            },
+            "ayah_start": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "ayah_end": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "hadith": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "collection": {
+              "type": "string"
+            },
+            "book_number": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "chapter_id": {
+              "type": [
+                "integer",
+                "string",
+                "null"
+              ]
+            },
+            "hadith_number": {
+              "type": [
+                "integer",
+                "string",
+                "null"
+              ]
+            },
+            "id_in_book": {
+              "type": [
+                "integer",
+                "string",
+                "null"
+              ]
+            },
+            "source_hadith_number": {
+              "type": [
+                "integer",
+                "string",
+                "null"
+              ],
+              "description": "the source's own running number when hadith_number is the printed one (sunan_grades)"
+            },
+            "albani_grade": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "al-Albani's verdict for the printed number (sunan_grades)"
+            },
+            "albani_grade_class": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "the verdict's class: sahih, hasan, daif, ..."
+            }
+          }
+        },
+        "openiti": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "uri": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "section_marker": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        "source_record": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "record_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "record_index": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "token_counts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "tokenizer_name",
+          "token_count"
+        ],
+        "properties": {
+          "tokenizer_name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "token_count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "string_list": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    }
+  }
+}

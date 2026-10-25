@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dalil:schema:isnad_edges",
+  "title": "Dalil isnad edge",
+  "description": "Lightweight narrator-chain side artifact. This is not GraphRAG; it is a validated edge list derived during hadith structure extraction.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "edge_id",
+    "hadith_parent_id",
+    "collection",
+    "book_id",
+    "narrator_a",
+    "narrator_b",
+    "order",
+    "extraction_confidence",
+    "quality_flags"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "dalil.isnad_edge.v1"
+    },
+    "edge_id": {
+      "type": "string",
+      "pattern": "^edge:"
+    },
+    "hadith_parent_id": {
+      "type": "string",
+      "pattern": "^parent:"
+    },
+    "collection": {
+      "type": "string",
+      "minLength": 1
+    },
+    "book_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "narrator_a": {
+      "type": "string",
+      "minLength": 1
+    },
+    "narrator_b": {
+      "type": "string",
+      "minLength": 1
+    },
+    "order": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "extraction_confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "source_view_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^view:"
+    },
+    "quality_flags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    }
+  }
+}
