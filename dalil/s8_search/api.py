@@ -19,14 +19,10 @@ EMBED_INSTRUCTION_AR = (
     "Query:"
 )
 
-# Chat models are read from the environment so a model OpenRouter retires can be
-# swapped without a release. The previous pins (qwen/qwen3-8b for the rerank and
-# source classifier, qwen3-30b-a3b-instruct-2507 on CoreWeave only for the planner)
-# stopped being served and every call failed silently. Claude Haiku 5.5 is served
-# by several providers and handles Arabic and JSON output; it has not been through
-# the 2026-08-28 planner/critic benchmark, so re-run that before relying on it.
-LISTWISE_MODEL = os.environ.get("DALIL_LISTWISE_MODEL", "anthropic/claude-haiku-5.5")
-PLANNER_MODEL = os.environ.get("DALIL_PLANNER_MODEL", "anthropic/claude-haiku-5.5")
+# The source classifier (and opt-in listwise rerank) and the query planner, checked
+# on the 197 people-asked questions by dalil/s8_search/model_check.py (docs/model_check.md).
+LISTWISE_MODEL = os.environ.get("DALIL_LISTWISE_MODEL", "google/gemma-4-26b-a4b-it")
+PLANNER_MODEL = os.environ.get("DALIL_PLANNER_MODEL", "google/gemini-3.1-flash-lite")
 # Optional preferred provider for the planner; others are still allowed as fallbacks.
 PLANNER_PROVIDER = os.environ.get("DALIL_PLANNER_PROVIDER", "")
 PLANNER_TIMEOUT_SECONDS = 55

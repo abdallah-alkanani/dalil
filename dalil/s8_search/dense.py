@@ -1,8 +1,8 @@
 """Dense search over the flat FAISS index: exact and streamed from disk
 (``DenseIndex``), or two-stage from a compact copy in RAM (``CompactDenseIndex``).
 
-The production index is an ``IndexFlatIP`` of 880k x 4096 float32 vectors:
-14.4 GB. Reading it into RAM per query (``faiss.read_index``) needs more memory
+The production index is an ``IndexFlatIP`` of 927,744 x 4096 float32 vectors:
+15.2 GB. Reading it into RAM per query (``faiss.read_index``) needs more memory
 than a 16 GB machine has free, and memory-mapping it (``IO_FLAG_MMAP_IFC``) turns
 the scan into 4 KB page faults: 27 s per query measured on NVMe that streams the
 same file at 4.3 GB/s.
@@ -168,9 +168,10 @@ class CompactDenseIndex:
     A float16 copy of the first ``dims`` coordinates of every vector (built by
     ``dalil.s7_index.compact``) is held in RAM and scanned for the top
     ``max(k, rescore)`` rows; the top ``rescore`` of those are then scored exactly
-    against the full vectors, read from the memory-mapped flat index. Against
-    exact search on 65 real queries, 1024 dims with a 1000-row rescore returned
-    the same top 50 every time and 99.9% of the top 200.
+    against the full vectors, read from the memory-mapped flat index. Results can
+    differ from exact search: on 724 questions, 1024 dims with a 1000-row rescore
+    returned the same top 50 for 723 and 99.84% of the top 200
+    (``dalil.s7_index.compact_check``, docs/compact_check.md).
 
     Rows past ``rescore`` keep the compact order. Their compact scores are on a
     different scale, so they are shifted to sit just below the last exact score:

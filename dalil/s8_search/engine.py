@@ -994,10 +994,13 @@ Sources:"""
             )
             message = resp.json()["choices"][0]["message"]
             answer = (message.get("content") or "").strip().lower()
+            if not answer:
+                self._status["source_classifier"] = "failed(empty answer)"
+                return None
+            self._status["source_classifier"] = "ok"
             if "all" in answer:
                 return None
             found = [cat for cat in CATEGORY_ORDER if cat in answer]
-            self._status["source_classifier"] = "ok"
             return found or None
         except Exception as exc:
             log(f"  [Boost] LLM classification skipped: {exc}")

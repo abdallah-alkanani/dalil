@@ -108,10 +108,15 @@ What a search does:
    Both are off by default.
 
 Every LLM call goes through OpenRouter with `OPENROUTER_API_KEY`. With
-`--retrieval bm25`, a search makes no API call. The planner and reranker models are
-`DALIL_PLANNER_MODEL` and `DALIL_LISTWISE_MODEL` (default `anthropic/claude-haiku-5.5`),
-with an optional preferred provider in `DALIL_PLANNER_PROVIDER`. If the question
-cannot be embedded, a hybrid search falls back to BM25, and the result's
+`--retrieval bm25`, a search makes no API call. The source-type classifier runs only
+when no keyword in the question names a source type; it and `--listwise` use
+`DALIL_LISTWISE_MODEL` (default `google/gemma-4-26b-a4b-it`), and `--query-planning`
+uses `DALIL_PLANNER_MODEL` (default `google/gemini-3.1-flash-lite`, optional preferred
+provider `DALIL_PLANNER_PROVIDER`). On the 197 questions asked by people, the keywords
+left 96 to the classifier and gemma named the question's source type for 85; gemini
+returned a valid, Arabic plan with the critic for 30 of 30
+([docs/model_check.md](docs/model_check.md), `dalil/s8_search/model_check.py`). If the
+question cannot be embedded, a hybrid search falls back to BM25, and the result's
 `status.retrieval` says so.
 
 ## Answering with a language model
@@ -215,17 +220,19 @@ the same subject.
 
 ### Exact search, from disk
 
-Every question is compared with all 927,744 vectors (`IndexFlatIP`); no
+By default every question is compared with all 927,744 vectors (`IndexFlatIP`); no
 approximate index is used. The 15.2 GB index is not loaded into memory: it is
 read from disk in large blocks and scored with FAISS's own exact kernel, so
 vector search runs on a 16 GB machine (`dalil/s8_search/dense.py`).
 
-On a host with little RAM or a slow disk, `python -m dalil.s7_index.compact --dims 1024`
-writes a 1.9 GB float16 copy of the first 1,024 dimensions (Qwen3-Embedding is
-Matryoshka-trained). With `DALIL_DENSE_COMPACT_DIMS=1024` search scans that copy in
-memory and rescores its top 1,000 exactly from the full index
-(`DALIL_DENSE_RESCORE`). On 65 real questions it returned the same top 50 as exact
-search every time.
+An optional faster mode is for a host with little RAM or a slow disk.
+`python -m dalil.s7_index.compact --dims 1024` writes a 1.9 GB float16 copy of the first
+1,024 dimensions (Qwen3-Embedding is Matryoshka-trained). With
+`DALIL_DENSE_COMPACT_DIMS=1024`, search scans that copy in memory and rescores its top
+1,000 exactly from the full index (`DALIL_DENSE_RESCORE`). Its results can differ from
+exact search: on the 724 questions of the questions dataset it returned the same top 50
+for 723 and 99.84% of the top 200
+([docs/compact_check.md](docs/compact_check.md), `dalil/s7_index/compact_check.py`).
 
 ### Cleaned books
 
@@ -280,6 +287,8 @@ web/             a search API and a web app over it (web/README.md)
 - [`docs/decisions.md`](docs/decisions.md): why things are the way they are, with the code that does it
 - [`docs/books.md`](docs/books.md): the books in the database
 - [`docs/status.md`](docs/status.md): what works now
+- [`docs/compact_check.md`](docs/compact_check.md): the compact dense mode against exact search, per question
+- [`docs/model_check.md`](docs/model_check.md): the classifier and planner models, per question
 
 ## License
 

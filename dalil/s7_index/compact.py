@@ -1,7 +1,7 @@
 """Build a compact in-RAM copy of the dense index for serving.
 
-The full index is 880k+ x 4096 float32 (14.4 GB) and search scans all of it per
-query (``dalil.s8_search.dense``). That is fine on a workstation with fast NVMe
+The full index is 927,744 x 4096 float32 (15.2 GB) and exact search scans all of
+it per query (``dalil.s8_search.dense``). That is fine on a workstation with fast NVMe
 but not on a host whose disk is capped at a few thousand IOPS. Qwen3-Embedding is
 trained with Matryoshka representation learning, so the first ``dims`` coordinates
 of each vector, renormalised, are themselves an embedding. This module writes
