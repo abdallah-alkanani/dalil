@@ -1,0 +1,7 @@
+node_modules/
+.next/
+.env*.local
+next-env.d.ts
+*.tsbuildinfo
+# Written by next dev
+AGENTS.md
