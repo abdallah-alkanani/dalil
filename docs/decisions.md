@@ -61,6 +61,41 @@ Each decision names the code that implements it.
   cache (`dalil/s8_search/dense.py`).
 - **BM25 freshness** is checked against FTS5's `docsize` table, not by counting rows
   (`dalil/s7_index/bm25.py`). `append` refuses to run when `bm25.sqlite` is out of step.
+- **Compact dense mode** is optional, for hosts with little RAM or a slow disk. The first 1,024
+  dimensions of every vector (Qwen3-Embedding is Matryoshka-trained), as float16, are scanned in
+  memory and the top 1,000 rescored exactly (`CompactDenseIndex`, `DALIL_DENSE_COMPACT_DIMS`).
+  Exact search stays the default because the compact mode can differ: on the 724 dataset
+  questions it returned the same top 50 for 723 (`docs/compact_check.md`).
+- **Classifier and planner models** come from `DALIL_LISTWISE_MODEL` and `DALIL_PLANNER_MODEL`,
+  default `google/gemini-3.1-flash-lite`, the model with the most correct classifications (tied)
+  and the fastest valid planner on the 197 people-asked questions (`docs/model_check.md`).
+  Reasoning models fail both: they spend the 20 and 900 output tokens before answering.
+- **Search reports what ran.** `query()` returns `status` with the retrieval mode, planner,
+  rerank and source classifier outcomes. A hybrid search whose question cannot be embedded
+  falls back to BM25 and records why in `status.retrieval`.
+
+## Web
+
+- **One answer path.** The website asks the API's `/ask`, which streams the answer and stores
+  the question, the passages, the answer, the model, its token counts and reported cost, and a
+  hash of the system prompt. The per-user and global daily caps apply there
+  (`web/backend/dalil_api/main.py`).
+- **The answer model runs the search.** `prompts/answering_system_prompt.md` is written for a
+  model that searches first and searches again when a search misses, so on the website the
+  model gets a `search` tool, at most 3 calls per question; passage numbers continue across
+  searches, and each search counts against the user's daily searches
+  (`web/backend/dalil_api/answer.py`).
+- **The system prompt** is the repository's answering prompt followed by the OpenUI component
+  instructions, generated from the frontend's component library (`npm run prompt` writes
+  `web/backend/dalil_api/answer_components.md`).
+- **The answer model** is any OpenAI-compatible endpoint; the default is DeepSeek 4.1 Flash on
+  Ollama Cloud with `reasoning_effort: none`, so the token budget goes to the answer. It returns
+  tool calls on that endpoint.
+- **Quotes are checked.** Components refer to passages by number. `Quote` matches the model's
+  words against the passage, ignoring diacritics, alef forms and punctuation, and shows the
+  passage's own text, or a warning when the words are not in it (`web/frontend/lib/arabic.ts`).
+- **Invite-only.** Each visitor signs in with an invite code and gets their own API token, kept
+  in an httpOnly cookie, so the per-user caps apply to every visitor.
 
 ## Pipeline
 

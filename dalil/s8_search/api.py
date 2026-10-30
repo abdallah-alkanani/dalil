@@ -2,6 +2,7 @@
 source classification and the optional listwise rerank."""
 from __future__ import annotations
 
+import os
 import time
 from typing import Any
 
@@ -18,15 +19,12 @@ EMBED_INSTRUCTION_AR = (
     "Query:"
 )
 
-# A pragmatic listwise reranker. Prefer a real reranker model when a provider
-# exposes Qwen3-Reranker or another cross-encoder.
-LISTWISE_MODEL = "qwen/qwen3-8b"
-# Benchmarked across every OpenRouter provider serving this model on 2026-08-28:
-# CoreWeave bf16 was the fastest that passed the planner and critic JSON checks
-# and a live Arabic quality check. Alibaba was faster but emitted Chinese or
-# malformed Arabic; StreamLake returned 429 on the critic.
-PLANNER_MODEL = "qwen/qwen3-30b-a3b-instruct-2507"
-PLANNER_PROVIDER = "coreweave"
+# The source classifier (and opt-in listwise rerank) and the query planner, checked
+# on the 197 people-asked questions by dalil/s8_search/model_check.py (docs/model_check.md).
+LISTWISE_MODEL = os.environ.get("DALIL_LISTWISE_MODEL", "google/gemini-3.1-flash-lite")
+PLANNER_MODEL = os.environ.get("DALIL_PLANNER_MODEL", "google/gemini-3.1-flash-lite")
+# Optional preferred provider for the planner; others are still allowed as fallbacks.
+PLANNER_PROVIDER = os.environ.get("DALIL_PLANNER_PROVIDER", "")
 PLANNER_TIMEOUT_SECONDS = 55
 
 
