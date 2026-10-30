@@ -98,7 +98,7 @@ function SignIn({ onSignedIn }: { onSignedIn: (u: User) => void }) {
     });
     setBusy(false);
     if (r.ok) onSignedIn((await r.json()).user);
-    else setError(r.status === 403 ? "رمز الدعوة غير صالح أو مستعمل." : "تعذّر الدخول، حاول مرة أخرى.");
+    else setError(r.status === 403 ? "رمز الدعوة غير صالح أو استُعمل كله. يبدأ الرمز بـ inv_" : "تعذّر الدخول، حاول مرة أخرى.");
   };
   return (
     <main className="signin">
@@ -111,7 +111,14 @@ function SignIn({ onSignedIn }: { onSignedIn: (u: User) => void }) {
         </label>
         <label>
           <span>رمز الدعوة</span>
-          <input value={code} onChange={(e) => setCode(e.target.value)} required dir="ltr" autoComplete="off" />
+          <input
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            required
+            dir="ltr"
+            autoComplete="off"
+            placeholder="inv_…"
+          />
         </label>
         {error ? <p className="signin-error">{error}</p> : null}
         <Button variant="primary" size="medium" type="submit" disabled={busy || !code.trim() || !name.trim()}>
