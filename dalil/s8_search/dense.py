@@ -1,4 +1,5 @@
-"""Exact dense search over the flat FAISS index, streamed from disk.
+"""Dense search over the flat FAISS index: exact and streamed from disk
+(``DenseIndex``), or two-stage from a compact copy in RAM (``CompactDenseIndex``).
 
 The production index is an ``IndexFlatIP`` of 880k x 4096 float32 vectors:
 14.4 GB. Reading it into RAM per query (``faiss.read_index``) needs more memory
@@ -159,3 +160,67 @@ class DenseIndex:
             free.put(None)  # unblock a reader waiting for a buffer
             thread.join(timeout=5)
             os.close(fd)
+
+
+class CompactDenseIndex:
+    """Two-stage dense search for hosts with little RAM or slow disks.
+
+    A float16 copy of the first ``dims`` coordinates of every vector (built by
+    ``dalil.s7_index.compact``) is held in RAM and scanned for the top
+    ``max(k, rescore)`` rows; the top ``rescore`` of those are then scored exactly
+    against the full vectors, read from the memory-mapped flat index. Against
+    exact search on 65 real queries, 1024 dims with a 1000-row rescore returned
+    the same top 50 every time and 99.9% of the top 200.
+
+    Rows past ``rescore`` keep the compact order. Their compact scores are on a
+    different scale, so they are shifted to sit just below the last exact score:
+    rank order is right, the absolute values beyond ``rescore`` are approximate.
+    """
+
+    def __init__(self, full_path: Path, compact_path: Path, rescore: int = 1000):
+        import faiss
+
+        self.full = DenseIndex(full_path)
+        self.compact = faiss.read_index(str(compact_path))
+        if self.compact.ntotal != self.full.ntotal:
+            raise RuntimeError(
+                f"{compact_path.name} has {self.compact.ntotal} rows, "
+                f"{full_path.name} has {self.full.ntotal}: rebuild the compact index")
+        self.path = full_path
+        self.d = self.full.d
+        self.ntotal = self.full.ntotal
+        self.metric_type = self.full.metric_type
+        self.dims = self.compact.d
+        self.rescore = rescore
+
+    def reconstruct(self, row: int) -> np.ndarray:
+        return self.full.reconstruct(row)
+
+    def search(self, queries: np.ndarray, k: int) -> tuple[np.ndarray, np.ndarray]:
+        queries = np.ascontiguousarray(queries, dtype=np.float32).reshape(-1, self.d)
+        k = min(int(k), self.ntotal)
+        head = queries[:, :self.dims]
+        head = head / np.maximum(np.linalg.norm(head, axis=1, keepdims=True), 1e-12)
+        approx_scores, approx_ids = self.compact.search(np.ascontiguousarray(head), max(k, self.rescore))
+
+        all_scores = np.empty((len(queries), k), dtype=np.float32)
+        all_ids = np.empty((len(queries), k), dtype=np.int64)
+        for qi, query in enumerate(queries):
+            ids = approx_ids[qi][approx_ids[qi] >= 0]
+            n_exact = min(self.rescore, len(ids))
+            # Read in file order so the rescore is one forward sweep over the disk.
+            exact_rows = np.sort(ids[:n_exact])
+            exact = np.stack([self.full.reconstruct(int(r)) for r in exact_rows]) @ query
+            order = np.argsort(-exact, kind="stable")
+            scores = exact[order]
+            rows = exact_rows[order]
+            tail_ids = ids[n_exact:]
+            if len(tail_ids):
+                tail = approx_scores[qi][n_exact:len(ids)]
+                tail = tail - (tail[0] - scores[-1]) - 1e-6
+                scores = np.concatenate([scores, tail])
+                rows = np.concatenate([rows, tail_ids])
+            take = min(k, len(rows))
+            all_scores[qi, :take], all_ids[qi, :take] = scores[:take], rows[:take]
+            all_scores[qi, take:], all_ids[qi, take:] = -np.inf, -1
+        return all_scores, all_ids

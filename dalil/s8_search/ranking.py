@@ -114,7 +114,9 @@ def mmr_select(
 def parse_listwise_ranking(response: str, n_passages: int) -> list[int]:
     if not response:
         return list(range(n_passages))
-    response = re.sub(r"<think>.*?</think>", "", response, flags=re.DOTALL).strip()
+    # An unclosed <think> (a reasoning model cut off by max_tokens) is dropped to
+    # the end, so numbers from the reasoning never become the ranking.
+    response = re.sub(r"<think>.*?(?:</think>|\Z)", "", response, flags=re.DOTALL).strip()
     ranking = []
     seen = set()
     for number in re.findall(r"\d+", response):

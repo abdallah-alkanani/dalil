@@ -557,7 +557,7 @@ class PlannedQueryEndToEndTests(unittest.TestCase):
 
 
 class QueryPlannerTransportTests(unittest.TestCase):
-    def test_planner_pins_fast_provider_and_never_retries(self):
+    def test_planner_prefers_provider_with_fallbacks_and_never_retries(self):
         class FakeResponse:
             def json(self):
                 return {"choices": [{"message": {"content": '{"use_variants": false}'}}]}
@@ -565,8 +565,8 @@ class QueryPlannerTransportTests(unittest.TestCase):
         engine = search_engine.QueryEngine.__new__(search_engine.QueryEngine)
         engine.api_key = "test-key"
         engine.openrouter_url = "https://example.invalid"
-        engine.planner_model = search_engine.PLANNER_MODEL
-        engine.planner_provider = search_engine.PLANNER_PROVIDER
+        engine.planner_model = "some/model"
+        engine.planner_provider = "someprovider"
 
         with mock.patch.object(search_engine, "request_with_retries", return_value=FakeResponse()) as request:
             content = engine._planning_completion("return JSON")
@@ -575,11 +575,16 @@ class QueryPlannerTransportTests(unittest.TestCase):
         kwargs = request.call_args.kwargs
         self.assertEqual(kwargs["timeout"], 55)
         self.assertEqual(kwargs["retries"], 0)
-        self.assertEqual(kwargs["json_body"]["model"], "qwen/qwen3-30b-a3b-instruct-2507")
+        self.assertEqual(kwargs["json_body"]["model"], "some/model")
         self.assertEqual(
             kwargs["json_body"]["provider"],
-            {"only": ["coreweave"], "allow_fallbacks": False},
+            {"order": ["someprovider"], "allow_fallbacks": True},
         )
+
+        engine.planner_provider = ""
+        with mock.patch.object(search_engine, "request_with_retries", return_value=FakeResponse()) as request:
+            engine._planning_completion("return JSON")
+        self.assertNotIn("provider", request.call_args.kwargs["json_body"])
 
 
 class QueryCliTests(unittest.TestCase):

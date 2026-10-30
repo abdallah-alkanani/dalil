@@ -2,6 +2,7 @@
 source classification and the optional listwise rerank."""
 from __future__ import annotations
 
+import os
 import time
 from typing import Any
 
@@ -18,15 +19,16 @@ EMBED_INSTRUCTION_AR = (
     "Query:"
 )
 
-# A pragmatic listwise reranker. Prefer a real reranker model when a provider
-# exposes Qwen3-Reranker or another cross-encoder.
-LISTWISE_MODEL = "qwen/qwen3-8b"
-# Benchmarked across every OpenRouter provider serving this model on 2026-08-28:
-# CoreWeave bf16 was the fastest that passed the planner and critic JSON checks
-# and a live Arabic quality check. Alibaba was faster but emitted Chinese or
-# malformed Arabic; StreamLake returned 429 on the critic.
-PLANNER_MODEL = "qwen/qwen3-30b-a3b-instruct-2507"
-PLANNER_PROVIDER = "coreweave"
+# Chat models are read from the environment so a model OpenRouter retires can be
+# swapped without a release. The previous pins (qwen/qwen3-8b for the rerank and
+# source classifier, qwen3-30b-a3b-instruct-2507 on CoreWeave only for the planner)
+# stopped being served and every call failed silently. Claude Haiku 5.5 is served
+# by several providers and handles Arabic and JSON output; it has not been through
+# the 2026-08-28 planner/critic benchmark, so re-run that before relying on it.
+LISTWISE_MODEL = os.environ.get("DALIL_LISTWISE_MODEL", "anthropic/claude-haiku-5.5")
+PLANNER_MODEL = os.environ.get("DALIL_PLANNER_MODEL", "anthropic/claude-haiku-5.5")
+# Optional preferred provider for the planner; others are still allowed as fallbacks.
+PLANNER_PROVIDER = os.environ.get("DALIL_PLANNER_PROVIDER", "")
 PLANNER_TIMEOUT_SECONDS = 55
 
 

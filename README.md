@@ -108,7 +108,11 @@ What a search does:
    Both are off by default.
 
 Every LLM call goes through OpenRouter with `OPENROUTER_API_KEY`. With
-`--retrieval bm25`, a search makes no API call.
+`--retrieval bm25`, a search makes no API call. The planner and reranker models are
+`DALIL_PLANNER_MODEL` and `DALIL_LISTWISE_MODEL` (default `anthropic/claude-haiku-5.5`),
+with an optional preferred provider in `DALIL_PLANNER_PROVIDER`. If the question
+cannot be embedded, a hybrid search falls back to BM25, and the result's
+`status.retrieval` says so.
 
 ## Answering with a language model
 
@@ -216,6 +220,13 @@ approximate index is used. The 15.2 GB index is not loaded into memory: it is
 read from disk in large blocks and scored with FAISS's own exact kernel, so
 vector search runs on a 16 GB machine (`dalil/s8_search/dense.py`).
 
+On a host with little RAM or a slow disk, `python -m dalil.s7_index.compact --dims 1024`
+writes a 1.9 GB float16 copy of the first 1,024 dimensions (Qwen3-Embedding is
+Matryoshka-trained). With `DALIL_DENSE_COMPACT_DIMS=1024` search scans that copy in
+memory and rescores its top 1,000 exactly from the full index
+(`DALIL_DENSE_RESCORE`). On 65 real questions it returned the same top 50 as exact
+search every time.
+
 ### Cleaned books
 
 Every book's full cleaned text is published next to its original, in the same
@@ -259,6 +270,7 @@ dalil/
 docs/            how it works, why, and the list of books
 prompts/         the system prompt for the answering model
 tests/           offline tests
+web/             a search API and a web app over it (web/README.md)
 ```
 
 ## Documentation

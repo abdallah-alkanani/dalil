@@ -5,6 +5,8 @@ Stores, in one directory (default ``data/db``):
   faiss_metadata.sqlite   one row per indexed retrieval view (child), keyed by faiss_row
   parents.sqlite          parent passages: the evidence handed to the answering model
   bm25.sqlite             FTS5 lexical index over the children
+  dense_compact_<dims>_f16.index  optional fp16 copy of the first <dims> dims, for
+                          two-stage search (``DALIL_DENSE_COMPACT_DIMS``)
 
 Pipeline per question:
   1. Optionally plan intent-checked query variants (``planning.py``).
@@ -16,7 +18,9 @@ Pipeline per question:
 """
 from __future__ import annotations
 
+import inspect
 import json
+import os
 import re
 import sqlite3
 import sys
@@ -41,7 +45,7 @@ from .api import (
     PLANNER_TIMEOUT_SECONDS,
     request_with_retries,
 )
-from .dense import DenseIndex
+from .dense import CompactDenseIndex, DenseIndex
 from .filters import (
     build_bm25_where,
     build_child_filter_where,
@@ -112,13 +116,15 @@ class QueryEngine:
         self.listwise_model = listwise_model
         self.planner_model = planner_model
         self.planner_provider = planner_provider
-        self._dense_index: DenseIndex | None = None
+        self._dense_index: DenseIndex | CompactDenseIndex | None = None
         self._child_conn: sqlite3.Connection | None = None
         self._parent_conn: sqlite3.Connection | None = None
         self._bm25_conn: sqlite3.Connection | None = None
         self._child_cache: dict[int, dict[str, Any] | None] = {}
         self._parent_cache: dict[str, dict[str, Any] | None] = {}
         self._prefetch: _QueryPrefetch | None = None
+        # What actually ran in the current query(): returned as payload["status"].
+        self._status: dict[str, str] = {}
 
     def close(self) -> None:
         for conn in (self._child_conn, self._parent_conn, self._bm25_conn):
@@ -185,10 +191,21 @@ class QueryEngine:
             self._bm25_conn = conn
         return self._bm25_conn
 
-    def load_faiss_index(self) -> DenseIndex:
+    def load_faiss_index(self) -> DenseIndex | CompactDenseIndex:
+        """The exact streamed index, or with ``DALIL_DENSE_COMPACT_DIMS`` set (for
+        example 1024) the two-stage compact index, for hosts with slow disks."""
         if self._dense_index is None:
             try:
-                self._dense_index = DenseIndex(self.faiss_path)
+                dims = os.environ.get("DALIL_DENSE_COMPACT_DIMS", "").strip()
+                if dims:
+                    from dalil.s7_index.compact import compact_path
+
+                    rescore = int(os.environ.get("DALIL_DENSE_RESCORE", "1000"))
+                    self._dense_index = CompactDenseIndex(
+                        self.faiss_path, compact_path(self.db_dir, int(dims)), rescore=rescore)
+                    log(f"  [Dense] Compact index: {dims} dims in RAM, exact rescore of top {rescore}")
+                else:
+                    self._dense_index = DenseIndex(self.faiss_path)
             except ImportError as exc:
                 raise RuntimeError("Missing dependency: install faiss-cpu in this Python environment") from exc
         return self._dense_index
@@ -261,8 +278,16 @@ class QueryEngine:
         return {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
 
     def embed_query(self, question: str) -> np.ndarray:
+        try:
+            return self._embed_query(question)
+        except EmbeddingError:
+            raise
+        except Exception as exc:
+            raise EmbeddingError(f"query embedding failed: {exc}") from exc
+
+    def _embed_query(self, question: str) -> np.ndarray:
         if not self.api_key:
-            raise RuntimeError("Missing OPENROUTER_API_KEY")
+            raise EmbeddingError("Missing OPENROUTER_API_KEY")
 
         text = f"{EMBED_INSTRUCTION_AR} {question}"
         resp = request_with_retries(
@@ -299,10 +324,8 @@ class QueryEngine:
                     "max_tokens": max_tokens,
                     "temperature": 0,
                     "response_format": {"type": "json_object"},
-                    "provider": {
-                        "only": [self.planner_provider],
-                        "allow_fallbacks": False,
-                    },
+                    **({"provider": {"order": [self.planner_provider], "allow_fallbacks": True}}
+                       if self.planner_provider else {}),
                 },
                 timeout=PLANNER_TIMEOUT_SECONDS,
                 retries=0,
@@ -522,13 +545,15 @@ class QueryEngine:
             if not allowed_rows:
                 return {"results": [], "question": question, "error": "No rows match filters"}
 
+        call_args = locals().copy()
+        self._status = {"retrieval": retrieval_mode, "planner": "off", "rerank": "off", "source_classifier": "off"}
         with ThreadPoolExecutor(max_workers=8, thread_name_prefix="dalil-query") as pool:
             self._prefetch = _QueryPrefetch(pool)
             try:
                 if require_dense:
                     self._prefetch.embedding(self, question)
                 boost_future = pool.submit(self.choose_boost_categories, question, boost_override)
-                return self._query_variants(
+                payload = self._query_variants(
                     question, boost_future, n_results=n_results, use_listwise_rerank=use_listwise_rerank,
                     mmr_lambda=mmr_lambda, dense_top_k=dense_top_k, bm25_top_k=bm25_top_k,
                     retrieval_mode=retrieval_mode, rrf_k=rrf_k, dense_weight=dense_weight,
@@ -538,8 +563,26 @@ class QueryEngine:
                     max_query_variants=max_query_variants, use_intent_critic=use_intent_critic,
                     variant_depth=variant_depth,
                 )
+            except EmbeddingError as exc:
+                if retrieval_mode != "hybrid":
+                    raise
+                log(f"  [Retrieval] {exc}; falling back to BM25")
+                fallback_reason = str(exc)
+            else:
+                payload["status"] = self._status
+                return payload
             finally:
                 self._prefetch = None
+        return self._bm25_fallback(question, fallback_reason, call_args)
+
+    def _bm25_fallback(self, question: str, reason: str, call_args: dict[str, Any]) -> dict[str, Any]:
+        """Re-run ``query`` lexically; the payload records why under ``status.retrieval``."""
+        kwargs = {k: v for k, v in call_args.items()
+                  if k in inspect.signature(self.query).parameters and k != "question"}
+        kwargs["retrieval_mode"] = "bm25"
+        payload = self.query(question, **kwargs)
+        payload["status"]["retrieval"] = f"bm25_fallback({reason[:200]})"
+        return payload
 
     def _query_variants(
         self,
@@ -583,6 +626,7 @@ class QueryEngine:
                 force_variants=query_planning == "on",
             )
             log(f"  [Planner] Accepted {len(plan['queries'])} sequential query variant(s)")
+            self._status["planner"] = f"failed({plan['error'][:200]})" if plan.get("error") else "ok"
         if require_dense and self._prefetch is not None:
             self._prefetch.pending = [v["query"] for v in plan["queries"]]
 
@@ -654,6 +698,7 @@ class QueryEngine:
         if use_listwise_rerank and candidates:
             log("  [Rerank] LLM listwise reranking...")
             results = self.llm_listwise_rerank(question, candidates, top_k=n_results)
+            self._status["rerank"] = "ok" if results and "listwise_rank" in results[0] else self._status.get("rerank", "failed")
         elif lossless_variant_pool:
             results = candidates
         else:
@@ -684,7 +729,7 @@ class QueryEngine:
             "mmr_depth": mmr_depth,
             "filters": filters,
             "mmr_lambda": mmr_lambda,
-            "listwise_reranked": use_listwise_rerank,
+            "listwise_reranked": self._status["rerank"] == "ok",
             "boost_categories": boost_cats,
         }
 
@@ -952,9 +997,11 @@ Sources:"""
             if "all" in answer:
                 return None
             found = [cat for cat in CATEGORY_ORDER if cat in answer]
+            self._status["source_classifier"] = "ok"
             return found or None
         except Exception as exc:
             log(f"  [Boost] LLM classification skipped: {exc}")
+            self._status["source_classifier"] = f"failed({str(exc)[:200]})"
             return None
 
     def apply_mmr(
@@ -1026,6 +1073,7 @@ Sources:"""
         depth: int = LISTWISE_DEPTH,
     ) -> list[dict[str, Any]]:
         if not self.api_key:
+            self._status["rerank"] = "failed(no OPENROUTER_API_KEY)"
             return candidates[:top_k]
 
         to_rerank = candidates[:depth]
@@ -1071,9 +1119,11 @@ Sources:"""
             for i, rec in enumerate(reranked):
                 rec["listwise_rank"] = i
             log(f"  [Listwise] Reranked {len(reranked)} candidates")
-            return reranked[:top_k]
+            # The reranked head first, then the rest in their previous order.
+            return (reranked + candidates[depth:])[:top_k]
         except Exception as exc:
             log(f"  [Listwise] Failed: {exc}")
+            self._status["rerank"] = f"failed({str(exc)[:200]})"
             return candidates[:top_k]
 
     # ── browsing ──────────────────────────────────────────────────────────────
@@ -1150,6 +1200,10 @@ Sources:"""
                  "text": r["text_for_synthesis"] or ""}
                 for r in rows
             ]
+
+
+class EmbeddingError(RuntimeError):
+    """The query could not be embedded (no key, or the embedding API failed)."""
 
 
 class _QueryPrefetch:
