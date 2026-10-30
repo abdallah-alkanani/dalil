@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Amiri, IBM_Plex_Sans_Arabic } from "next/font/google";
 import "@openuidev/react-ui/layered/styles/index.css";
 import "./globals.css";
@@ -21,6 +21,13 @@ const naskh = Amiri({
 export const metadata: Metadata = {
   title: "دليل — بحث موثّق في كتب التراث",
   description: "Arabic-first retrieval over classical Islamic texts, with cited answers.",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#f7f5f0",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

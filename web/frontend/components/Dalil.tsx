@@ -190,7 +190,6 @@ function Research({ user, onSignOut, onSignedOut }: { user: User; onSignOut: () 
         </button>
         <span className="topbar-sub">بحث موثّق في كتب التراث</span>
         <span className="topbar-spacer" />
-        <BackendStatus />
         <span className="topbar-user">{user.name}</span>
         <button type="button" className="link-btn topbar-out" onClick={onSignOut}>
           خروج
@@ -198,6 +197,7 @@ function Research({ user, onSignOut, onSignedOut }: { user: User; onSignOut: () 
       </header>
 
       <main className="thread">
+        <ServiceNotice />
         {turns.length === 0 ? (
           <Welcome onAsk={(q) => ask(q)} />
         ) : (
@@ -231,8 +231,9 @@ function Research({ user, onSignOut, onSignedOut }: { user: User; onSignOut: () 
   );
 }
 
-function BackendStatus() {
-  const [state, setState] = useState<string>("…");
+/** Says something only when search is not available yet or not at all. */
+function ServiceNotice() {
+  const [state, setState] = useState<string>("ready");
   useEffect(() => {
     let alive = true;
     const tick = () =>
@@ -247,13 +248,22 @@ function BackendStatus() {
       clearInterval(t);
     };
   }, []);
-  const label = state === "ready" ? "المكتبة جاهزة" : state === "offline" ? "الخادم غير متصل" : "جارٍ التحميل";
-  return (
-    <span className={`status-pill status-${state === "ready" ? "ok" : state === "offline" ? "down" : "wait"}`}>
-      <span className="status-dot" />
-      {label}
-    </span>
-  );
+  if (state === "ready") return null;
+  const text =
+    state === "offline" ? "تعذّر الاتصال بالخادم. أعد المحاولة بعد قليل."
+    : state === "failed" ? "تعذّر تحميل قاعدة البيانات، فالبحث متوقف الآن."
+    : "قاعدة البيانات قيد التحميل، وسيعمل البحث بعد دقائق.";
+  return <div className={`notice ${state === "offline" || state === "failed" ? "is-down" : ""}`}>{text}</div>;
+}
+
+/** Seconds since `from`, updated as it runs. */
+function Elapsed({ from }: { from: number }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 200);
+    return () => clearInterval(t);
+  }, []);
+  return <span className="elapsed">{fmtSeconds(now - from)}</span>;
 }
 
 function Welcome({ onAsk }: { onAsk: (q: string) => void }) {
@@ -314,23 +324,34 @@ function TurnView({
         {turn.question}
       </h2>
       <div className="turn-meta">
-        {turn.phase === "searching" ? (
-          <span className="meta-live">يبحث في المكتبة…</span>
+        {turn.phase === "searching" || streaming ? (
+          <span className="progress">
+            <span className={turn.phase === "searching" ? "is-now" : "is-done"}>
+              {turn.phase === "searching" ? "البحث في المصادر" : `${passages.length.toLocaleString("ar-EG")} مصادر`}
+            </span>
+            <span className="progress-sep">←</span>
+            <span className={streaming ? "is-now" : ""}>كتابة الإجابة</span>
+            <Elapsed from={turn.id} />
+          </span>
         ) : turn.retrieval ? (
           <>
-            <span>{turn.retrieval.status.retrieval === "hybrid" ? "بحث هجين" : turn.retrieval.status.retrieval}</span>
-            <span>·</span>
             <span>{passages.length.toLocaleString("ar-EG")} مصادر</span>
-            <span>·</span>
-            <span>{fmtSeconds(turn.retrieval.latency_ms)}</span>
+            {turn.totalMs ? (
+              <>
+                <span>·</span>
+                <span>{fmtSeconds(turn.totalMs)}</span>
+              </>
+            ) : null}
             {turn.categories.length ? (
               <>
                 <span>·</span>
                 <span>{turn.categories.map((c) => CATEGORY_LABELS[c]).join("، ")}</span>
               </>
             ) : null}
-            {streaming ? <span className="meta-live">يكتب الإجابة…</span> : null}
           </>
+        ) : null}
+        {turn.retrieval?.status.retrieval?.startsWith("bm25_fallback") ? (
+          <span className="meta-warn">بحث لفظي فقط: تعذّر البحث بالمعنى</span>
         ) : null}
       </div>
 
@@ -415,7 +436,7 @@ function Composer({
     const el = ref.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
+    el.style.height = `${Math.min(el.scrollHeight, window.innerWidth < 640 ? 120 : 180)}px`;
   }, [text]);
   const submit = () => {
     if (busy || text.trim().length < 2) return;
@@ -433,7 +454,7 @@ function Composer({
           dir="auto"
           rows={1}
           value={text}
-          placeholder="اكتب سؤالك… مثلاً: ما حكم الجمع بين الصلاتين في السفر؟"
+          placeholder="اكتب سؤالك…"
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
