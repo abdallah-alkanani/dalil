@@ -18,7 +18,6 @@ Pipeline per question:
 """
 from __future__ import annotations
 
-import inspect
 import json
 import os
 import re
@@ -545,7 +544,6 @@ class QueryEngine:
             if not allowed_rows:
                 return {"results": [], "question": question, "error": "No rows match filters"}
 
-        call_args = locals().copy()
         self._status = {"retrieval": retrieval_mode, "planner": "off", "rerank": "off", "source_classifier": "off"}
         with ThreadPoolExecutor(max_workers=8, thread_name_prefix="dalil-query") as pool:
             self._prefetch = _QueryPrefetch(pool)
@@ -573,15 +571,17 @@ class QueryEngine:
                 return payload
             finally:
                 self._prefetch = None
-        return self._bm25_fallback(question, fallback_reason, call_args)
-
-    def _bm25_fallback(self, question: str, reason: str, call_args: dict[str, Any]) -> dict[str, Any]:
-        """Re-run ``query`` lexically; the payload records why under ``status.retrieval``."""
-        kwargs = {k: v for k, v in call_args.items()
-                  if k in inspect.signature(self.query).parameters and k != "question"}
-        kwargs["retrieval_mode"] = "bm25"
-        payload = self.query(question, **kwargs)
-        payload["status"]["retrieval"] = f"bm25_fallback({reason[:200]})"
+        # Re-run lexically; the payload records why under status.retrieval.
+        payload = self.query(
+            question, n_results=n_results, use_listwise_rerank=use_listwise_rerank, mmr_lambda=mmr_lambda,
+            dense_top_k=dense_top_k, bm25_top_k=bm25_top_k, retrieval_mode="bm25", rrf_k=rrf_k,
+            dense_weight=dense_weight, bm25_weight=bm25_weight, mmr_depth=mmr_depth, categories=categories,
+            filters=filters, boost_override=boost_override, parent_max_chars=parent_max_chars,
+            expand_neighbours=expand_neighbours, query_planning=query_planning,
+            max_query_variants=max_query_variants, use_intent_critic=use_intent_critic,
+            variant_depth=variant_depth,
+        )
+        payload["status"]["retrieval"] = f"bm25_fallback({fallback_reason[:200]})"
         return payload
 
     def _query_variants(
@@ -960,8 +960,16 @@ class QueryEngine:
         return None
 
     def detect_source_boost_llm(self, question: str) -> list[str] | None:
+        found, status = self.classify_source_type(question)
+        if status != "off":
+            self._status["source_classifier"] = status
+        return found
+
+    def classify_source_type(self, question: str) -> tuple[list[str] | None, str]:
+        """The source types the LLM says to prioritise for ``question`` (None for
+        all), and ``ok``, ``off`` (no API key) or ``failed(<reason>)``."""
         if not self.api_key:
-            return None
+            return None, "off"
         prompt = f"""Classify which Islamic source type should be prioritized for this search query.
 
 Allowed source types:
@@ -995,17 +1003,13 @@ Sources:"""
             message = resp.json()["choices"][0]["message"]
             answer = (message.get("content") or "").strip().lower()
             if not answer:
-                self._status["source_classifier"] = "failed(empty answer)"
-                return None
-            self._status["source_classifier"] = "ok"
+                return None, "failed(empty answer)"
             if "all" in answer:
-                return None
-            found = [cat for cat in CATEGORY_ORDER if cat in answer]
-            return found or None
+                return None, "ok"
+            return [cat for cat in CATEGORY_ORDER if cat in answer] or None, "ok"
         except Exception as exc:
             log(f"  [Boost] LLM classification skipped: {exc}")
-            self._status["source_classifier"] = f"failed({str(exc)[:200]})"
-            return None
+            return None, f"failed({str(exc)[:200]})"
 
     def apply_mmr(
         self,

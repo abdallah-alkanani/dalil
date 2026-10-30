@@ -21,7 +21,7 @@ EMBED_INSTRUCTION_AR = (
 
 # The source classifier (and opt-in listwise rerank) and the query planner, checked
 # on the 197 people-asked questions by dalil/s8_search/model_check.py (docs/model_check.md).
-LISTWISE_MODEL = os.environ.get("DALIL_LISTWISE_MODEL", "google/gemma-4-26b-a4b-it")
+LISTWISE_MODEL = os.environ.get("DALIL_LISTWISE_MODEL", "google/gemini-3.1-flash-lite")
 PLANNER_MODEL = os.environ.get("DALIL_PLANNER_MODEL", "google/gemini-3.1-flash-lite")
 # Optional preferred provider for the planner; others are still allowed as fallbacks.
 PLANNER_PROVIDER = os.environ.get("DALIL_PLANNER_PROVIDER", "")

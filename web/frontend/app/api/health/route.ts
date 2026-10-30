@@ -1,8 +1,8 @@
 /** GET /api/health -> the API's /health and its search state. */
+import { API } from "@/lib/session";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const API = process.env.DALIL_API_URL ?? "http://localhost:8000";
 
 export async function GET() {
   try {

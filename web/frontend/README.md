@@ -1,15 +1,16 @@
 # dalil frontend
 
 Next.js app over the dalil API. Visitors sign in with an invite code; a question goes
-to the API's streaming `/ask`, the passages arrive first, and the answer streams as
+to the API's streaming `/ask`, where the answer model searches (each search and its
+passages appear as they run) and the answer streams as
 [OpenUI Lang](https://openui.com/docs/openui-lang) into the components in
 `lib/library.tsx`.
 
 ## Answers and their sources
 
-- Components refer to passages by number (`Quote(2, "...")`, `[3]`,
-  `View(..., [6, 7])`). Passage text comes from the search results
-  (`lib/passages.tsx`), never from the model.
+- Components refer to passages by number (`Quote(2, "...")`, `[3]`). A `View` names who
+  holds a view and carries their words as a `Quote`. Passage text comes from the search
+  results (`lib/passages.tsx`), never from the model.
 - `Quote` matches the model's words against passage n (`lib/arabic.ts`: diacritics,
   alef forms and punctuation ignored) and shows the passage's own text with the
   model's **bold** placed on it, marked "مطابق للمصدر", or a warning when the words
@@ -37,7 +38,7 @@ The API must be running (`../backend/README.md`); an admin mints invite codes wi
 | `app/api/auth/*` | redeem an invite (the token is kept in an httpOnly cookie), current user, sign out |
 | `app/api/feedback`, `app/api/health` | the API's `/feedback` and `/health` |
 | `lib/library.tsx` | the OpenUI library: Answer, Lead, Prose, Quote, Views, Steps, Table, Gap, Referral, FollowUpBlock |
-| `components/` | sign-in, page shell, citation chips, source list, source drawer with relevance feedback |
+| `components/` | `dalil.tsx` (sign-in and page), `cited_text.tsx`, `source_list.tsx`, `source_drawer.tsx` (the passage, with relevance feedback) |
 
 ## OpenUI
 

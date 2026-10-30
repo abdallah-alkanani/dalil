@@ -9,8 +9,8 @@ views the compact search also returns in its top 10, 50 and 200.
     python -m dalil.s7_index.compact_check --questions questions.jsonl \\
         --out docs/compact_check.jsonl --summary docs/compact_check.md
 
-``--questions`` is JSON Lines with a ``question`` field (other fields are kept),
-so the results file can be fed back in to re-run the same questions.
+``--questions`` is JSON Lines with ``id`` and ``question`` fields. The results keep
+the id and the ``--group-by`` field, not the question.
 """
 from __future__ import annotations
 
@@ -91,7 +91,7 @@ def main() -> None:
 
     results = []
     for row, e, c in zip(rows, exact_ids, compact_ids):
-        result = {key: row[key] for key in ("question", args.group_by) if key in row}
+        result = {key: row[key] for key in ("id", args.group_by) if key in row}
         for depth in DEPTHS:
             result[f"overlap_{depth}"] = overlap(e, c, depth)
             result[f"same_order_{depth}"] = bool(np.array_equal(e[:depth], c[:depth]))

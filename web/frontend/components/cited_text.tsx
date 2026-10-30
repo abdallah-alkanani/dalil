@@ -53,7 +53,7 @@ function Inline({ text }: { text: string }) {
   return <>{out}</>;
 }
 
-export function CiteChips({ nums }: { nums: number[] }) {
+function CiteChips({ nums }: { nums: number[] }) {
   return (
     <span className="cite-run">
       {nums.map((n, i) => (

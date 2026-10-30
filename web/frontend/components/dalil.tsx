@@ -6,8 +6,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { library } from "@/lib/library";
 import { PassagesContext } from "@/lib/passages";
 import { CATEGORY_LABELS, type AskEvent, type Category, type Passage, type Retrieval } from "@/lib/types";
-import { SourceDrawer } from "./SourceDrawer";
-import { SourceList } from "./SourceList";
+import { SourceDrawer } from "./source_drawer";
+import { SourceList } from "./source_list";
 
 const theme = createTheme({
   background: "#f7f5f0",
@@ -30,6 +30,7 @@ const theme = createTheme({
 
 interface Turn {
   id: number;
+  startedAt: number;
   question: string;
   categories: Category[];
   phase: "searching" | "answering" | "done" | "error";
@@ -127,6 +128,7 @@ function Research({ user, onSignOut, onSignedOut }: { user: User; onSignOut: () 
   const [categories, setCategories] = useState<Category[]>([]);
   const busy = turns.some((t) => t.phase === "searching" || t.phase === "answering");
   const endRef = useRef<HTMLDivElement>(null);
+  const turnSeq = useRef(0);
 
   const patch = useCallback((id: number, f: (t: Turn) => Partial<Turn>) => {
     setTurns((ts) => ts.map((t) => (t.id === id ? { ...t, ...f(t) } : t)));
@@ -136,8 +138,9 @@ function Research({ user, onSignOut, onSignedOut }: { user: User; onSignOut: () 
     async (question: string, cats: Category[] = categories) => {
       const q = question.trim();
       if (!q) return;
-      const id = Date.now();
-      setTurns((ts) => [...ts, { id, question: q, categories: cats, phase: "searching", answer: "" }]);
+      const id = (turnSeq.current += 1);
+      const turn: Turn = { id, startedAt: Date.now(), question: q, categories: cats, phase: "searching", answer: "" };
+      setTurns((ts) => [...ts, turn]);
       setTimeout(() => endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }), 50);
       try {
         const res = await fetch("/api/ask", {
@@ -159,11 +162,20 @@ function Research({ user, onSignOut, onSignedOut }: { user: User; onSignOut: () 
             buf = buf.slice(nl + 1);
             if (!line.trim()) continue;
             const e = JSON.parse(line) as AskEvent;
-            if (e.type === "retrieval") {
-              const { type: _t, ...retrieval } = e;
-              patch(id, () => ({ phase: "answering", retrieval }));
+            if (e.type === "start") {
+              patch(id, () => ({ retrieval: { query_id: e.query_id, searches: [], passages: [] } }));
+            } else if (e.type === "search") {
+              patch(id, (t) => ({
+                retrieval: t.retrieval && {
+                  ...t.retrieval,
+                  searches: [...t.retrieval.searches, { query: e.query, count: e.passages.length, status: e.status }],
+                  passages: [...t.retrieval.passages, ...e.passages],
+                },
+              }));
+            } else if (e.type === "reset") {
+              patch(id, () => ({ phase: "searching", answer: "" }));
             } else if (e.type === "delta") {
-              patch(id, (t) => ({ answer: t.answer + e.text }));
+              patch(id, (t) => ({ phase: "answering", answer: t.answer + e.text }));
             } else if (e.type === "done") {
               patch(id, () => ({ phase: "done", model: e.model, cost: e.cost_usd, totalMs: e.latency_ms }));
             } else if (e.type === "error") {
@@ -252,7 +264,7 @@ function ServiceNotice() {
   const text =
     state === "offline" ? "تعذّر الاتصال بالخادم. أعد المحاولة بعد قليل."
     : state === "failed" ? "تعذّر تحميل قاعدة البيانات، فالبحث متوقف الآن."
-    : "قاعدة البيانات قيد التحميل، وسيعمل البحث بعد دقائق.";
+    : "قاعدة البيانات قيد التحميل، والبحث متوقف حتى يكتمل.";
   return <div className={`notice ${state === "offline" || state === "failed" ? "is-down" : ""}`}>{text}</div>;
 }
 
@@ -308,6 +320,8 @@ function TurnView({
   busy: boolean;
 }) {
   const passages: Passage[] = turn.retrieval?.passages ?? [];
+  const searches = turn.retrieval?.searches ?? [];
+  const lastSearch = searches.at(-1);
   const ctx = useMemo(() => ({ passages, open: onOpen }), [passages, onOpen]);
   const cited = useMemo(() => citedNumbers(turn.answer), [turn.answer]);
   const streaming = turn.phase === "answering";
@@ -327,14 +341,16 @@ function TurnView({
         {turn.phase === "searching" || streaming ? (
           <span className="progress">
             <span className={turn.phase === "searching" ? "is-now" : "is-done"}>
-              {turn.phase === "searching" ? "البحث في المصادر" : `${passages.length.toLocaleString("ar-EG")} مصادر`}
+              {lastSearch ? `بحث: «${lastSearch.query}»` : "البحث في المصادر"}
             </span>
             <span className="progress-sep">←</span>
             <span className={streaming ? "is-now" : ""}>كتابة الإجابة</span>
-            <Elapsed from={turn.id} />
+            <Elapsed from={turn.startedAt} />
           </span>
-        ) : turn.retrieval ? (
+        ) : searches.length ? (
           <>
+            <span>بحث: {searches.map((x) => `«${x.query}»`).join("، ")}</span>
+            <span>·</span>
             <span>{passages.length.toLocaleString("ar-EG")} مصادر</span>
             {turn.totalMs ? (
               <>
@@ -350,7 +366,7 @@ function TurnView({
             ) : null}
           </>
         ) : null}
-        {turn.retrieval?.status.retrieval?.startsWith("bm25_fallback") ? (
+        {searches.some((x) => x.status.retrieval?.startsWith("bm25_fallback")) ? (
           <span className="meta-warn">بحث لفظي فقط: تعذّر البحث بالمعنى</span>
         ) : null}
       </div>
@@ -414,7 +430,7 @@ function TurnFooter({ turn, queryId, onRated }: { turn: Turn; queryId: number; o
         ))}
       </div>
       <span className="turn-cost" dir="ltr">
-        {turn.model?.replace(/^anthropic\//, "")}
+        {turn.model}
         {turn.cost != null ? ` · $${turn.cost.toFixed(3)}` : ""}
         {turn.totalMs ? ` · ${(turn.totalMs / 1000).toFixed(1)}s` : ""}
       </span>

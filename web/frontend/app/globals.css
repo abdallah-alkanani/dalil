@@ -165,15 +165,8 @@ button { font: inherit; color: inherit; }
 .ans-quote.is-unverified blockquote { color: var(--ink-2); text-decoration: underline dotted var(--warn); text-underline-offset: 6px; }
 .ans-quote.is-pending blockquote { color: var(--ink-3); }
 
-.ans-views-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
-/* Four positions read better as 2×2 than as 3 + 1. */
-@media (min-width: 640px) { .ans-views-grid[data-count="4"] { grid-template-columns: repeat(2, 1fr); } }
-.ans-view {
-  padding: 14px 16px; background: var(--card); border: 1px solid var(--line); border-radius: 12px;
-  font-size: 15.5px; line-height: 1.85;
-}
-.ans-view-holder { font-size: 13px; font-weight: 600; color: var(--accent); margin-bottom: 6px; letter-spacing: 0.01em; }
-.ans-view-sources { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
+.ans-views-list { display: flex; flex-direction: column; gap: 14px; }
+.ans-view-holder { font-size: 13.5px; font-weight: 600; color: var(--accent); margin-bottom: 6px; }
 
 .ans-steps { font-size: 15.5px; }
 .ans-callout { border-radius: 12px; }

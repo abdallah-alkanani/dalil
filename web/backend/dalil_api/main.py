@@ -62,7 +62,6 @@ class SearchBody(BaseModel):
 class AskBody(BaseModel):
     question: str = Field(min_length=2, max_length=2000)
     categories: list[Category] | None = None
-    query_planning: Literal["off", "auto", "on"] = "off"
     rerank: bool = False
 
 
@@ -142,10 +141,15 @@ def _event(event: dict[str, Any]) -> str:
     return json.dumps(event, ensure_ascii=False) + "\n"
 
 
-def _finish_query(db, query_id: int, started: float, error: str | None) -> None:
+def _finish_query(db, query_id: int, started: float, error: str | None, **values: Any) -> None:
     with db.begin() as conn:
         conn.execute(store.queries.update().where(store.queries.c.id == query_id).values(
-            latency_ms=int((time.time() - started) * 1000), error=error))
+            latency_ms=int((time.time() - started) * 1000), error=error, **values))
+
+
+def _searches_left(request: Request, user: dict[str, Any]) -> bool:
+    s: Settings = request.app.state.settings
+    return user["role"] == "admin" or store.count_today(request.app.state.db, "search", user["id"]) < s.user_daily_searches
 
 
 # ── routes ──────────────────────────────────────────────────────────────────────
@@ -202,54 +206,68 @@ def _routes(app: FastAPI) -> None:
 
     @app.post("/ask")
     def ask(body: AskBody, request: Request, user: dict = CurrentUser) -> StreamingResponse:
-        """The answer as NDJSON events: ``retrieval`` (query id and the numbered
-        passages), ``delta`` (OpenUI Lang text), then ``done`` or ``error``. The
-        question, passages and answer are logged; the daily caps apply."""
+        """The answer as NDJSON events: ``start`` (the query id), one ``search`` per
+        search the answer model runs (its query and the new numbered passages),
+        ``delta`` (OpenUI Lang text; ``reset`` discards text streamed so far), then
+        ``done`` or ``error``. Each search counts against the user's daily searches;
+        the question, the passages and the answer are logged."""
         s: Settings = request.app.state.settings
         db = request.app.state.db
         search = _require_ready(request)
         _check_quota(request, user, "ask")
+        params = body.model_dump(exclude={"question"})
+
+        def run_search(query: str) -> list[dict[str, Any]]:
+            if not _searches_left(request, user):
+                raise answering.SearchLimit(f"انتهى عدد مرات البحث اليوم ({s.user_daily_searches}). أجب من النصوص التي وصلتك.")
+            started = time.time()
+            payload, results = _run_search(
+                search, query, n_results=s.answer_passages, categories=body.categories, query_planning="off",
+                rerank=body.rerank, expand_neighbours=1, passage_max_chars=s.passage_max_chars)
+            status = payload.get("status", {})
+            _log_query(db, user_id=user["id"], kind="search", question=query, params={**params, "ask_id": query_id},
+                       status=status, results=results, latency_ms=int((time.time() - started) * 1000),
+                       error=payload.get("error"))
+            statuses.append({"query": query, **status})
+            return results
+
+        statuses: list[dict[str, Any]] = []
+        query_id = _log_query(db, user_id=user["id"], kind="ask", question=body.question, params=params,
+                              status={}, results=[], latency_ms=0)
 
         def events():
             started = time.time()
-            payload, results = _run_search(
-                search, body.question, n_results=s.answer_passages, categories=body.categories,
-                query_planning=body.query_planning, rerank=body.rerank, expand_neighbours=1,
-                passage_max_chars=s.passage_max_chars)
-            status = payload.get("status", {})
-            passages = answering.number_passages(results)
-            query_id = _log_query(db, user_id=user["id"], kind="ask", question=body.question,
-                                  params=body.model_dump(exclude={"question"}), status=status,
-                                  results=results, latency_ms=int((time.time() - started) * 1000),
-                                  error=payload.get("error"))
-            yield _event({"type": "retrieval", "query_id": query_id, "status": status,
-                          "latency_ms": int((time.time() - started) * 1000), "passages": passages})
-            if not passages:
-                yield _event({"type": "error", "stage": "search", "message": payload.get("error") or "no passages"})
-                return
+            yield _event({"type": "start", "query_id": query_id})
             text, done = "", None
             try:
-                for part in answering.stream(
-                        body.question, passages, prompt_path=s.answer_prompt_path, base_url=s.answer_base_url,
+                for part in answering.run(
+                        body.question, run_search, prompt_path=s.answer_prompt_path, base_url=s.answer_base_url,
                         api_key=s.answer_api_key, model=s.answer_model, max_tokens=s.answer_max_tokens,
                         reasoning_effort=s.answer_reasoning_effort):
-                    if "delta" in part:
+                    if "search" in part:
+                        yield _event({"type": "search", **part["search"], "status": statuses[-1]})
+                    elif "reset" in part:
+                        text = ""
+                        yield _event({"type": "reset"})
+                    elif "delta" in part:
                         text += part["delta"]
                         yield _event({"type": "delta", "text": part["delta"]})
                     else:
                         done = part["done"]
             except answering.AnswerError as exc:
                 log.warning("answer failed: %s", exc)
-                _finish_query(db, query_id, started, str(exc))
+                _finish_query(db, query_id, started, str(exc), status={"searches": statuses})
                 yield _event({"type": "error", "stage": "answer", "message": str(exc)})
                 return
+            shown = [{"n": p["n"], "parent_id": p["parent_id"], "citation": p["citation"]} for p in done["passages"]]
             with db.begin() as conn:
                 conn.execute(store.answers.insert().values(
                     query_id=query_id, model=done["model"], prompt_version=done["prompt_version"], text=text,
-                    passages=[{"n": p["n"], "parent_id": p["parent_id"], "citation": p["citation"]} for p in passages],
-                    prompt_tokens=done["prompt_tokens"], completion_tokens=done["completion_tokens"],
-                    cost_usd=done["cost_usd"], latency_ms=done["latency_ms"]))
-            _finish_query(db, query_id, started, None)
+                    passages=shown, prompt_tokens=done["prompt_tokens"],
+                    completion_tokens=done["completion_tokens"], cost_usd=done["cost_usd"],
+                    latency_ms=done["latency_ms"]))
+            _finish_query(db, query_id, started, None, status={"searches": statuses},
+                          results=[{"parent_id": p["parent_id"], "citation": p["citation"]} for p in shown])
             yield _event({"type": "done", "model": done["model"], "cost_usd": done["cost_usd"],
                           "latency_ms": int((time.time() - started) * 1000)})
 
@@ -270,8 +288,8 @@ def _routes(app: FastAPI) -> None:
     def give_feedback(body: FeedbackBody, request: Request, user: dict = CurrentUser) -> dict[str, Any]:
         db = request.app.state.db
         with db.begin() as conn:
-            q = conn.execute(select(store.queries.c.id).where(store.queries.c.id == body.query_id)).first()
-            if q is None:
+            q = conn.execute(select(store.queries.c.user_id).where(store.queries.c.id == body.query_id)).first()
+            if q is None or (q.user_id != user["id"] and user["role"] != "admin"):
                 raise HTTPException(404, "Unknown query_id")
             feedback_id = conn.execute(store.feedback.insert().values(
                 query_id=body.query_id, user_id=user["id"], rating=body.rating, comment=body.comment,

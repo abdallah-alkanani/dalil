@@ -20,16 +20,24 @@ export interface Passage {
   neighbours: { parent_id: string; offset: number; citation: string | null; text: string }[];
 }
 
+/** One search the answer model ran, with what the engine actually did. */
+export interface Search {
+  query: string;
+  count: number;
+  status: Record<string, string>;
+}
+
 export interface Retrieval {
   query_id: number;
-  status: Record<string, string>;
-  latency_ms: number;
+  searches: Search[];
   passages: Passage[];
 }
 
 /** The NDJSON events /api/ask streams. */
 export type AskEvent =
-  | ({ type: "retrieval" } & Retrieval)
+  | { type: "start"; query_id: number }
+  | { type: "search"; query: string; passages: Passage[]; status: Record<string, string> }
+  | { type: "reset" }
   | { type: "delta"; text: string }
   | { type: "done"; model?: string; cost_usd?: number | null; latency_ms: number }
   | { type: "error"; stage: "search" | "answer"; message: string };

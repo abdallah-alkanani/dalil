@@ -74,8 +74,9 @@ def build(index_path: Path, dims_list: list[int], db_dir: Path) -> list[Path]:
         out.flush()
         write_faiss(np.load(part, mmap_mode="r"), path)
         part.unlink()
-    meta = {"source": index_path.name, "ntotal": n, "source_dims": d, "dims": dims_list}
-    (db_dir / "dense_compact.json").write_text(json.dumps(meta, indent=1) + "\n", encoding="utf-8")
+    for dims, (_, path) in zip(dims_list, tmp):
+        meta = {"source": index_path.name, "ntotal": n, "source_dims": d, "dims": dims}
+        path.with_name(path.stem + "_metadata.json").write_text(json.dumps(meta, indent=1) + "\n", encoding="utf-8")
     return [p for _, p in tmp]
 
 

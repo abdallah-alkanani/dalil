@@ -110,11 +110,11 @@ What a search does:
 Every LLM call goes through OpenRouter with `OPENROUTER_API_KEY`. With
 `--retrieval bm25`, a search makes no API call. The source-type classifier runs only
 when no keyword in the question names a source type; it and `--listwise` use
-`DALIL_LISTWISE_MODEL` (default `google/gemma-4-26b-a4b-it`), and `--query-planning`
-uses `DALIL_PLANNER_MODEL` (default `google/gemini-3.1-flash-lite`, optional preferred
-provider `DALIL_PLANNER_PROVIDER`). On the 197 questions asked by people, the keywords
-left 96 to the classifier and gemma named the question's source type for 85; gemini
-returned a valid, Arabic plan with the critic for 30 of 30
+`DALIL_LISTWISE_MODEL`, and `--query-planning` uses `DALIL_PLANNER_MODEL` (optional
+preferred provider `DALIL_PLANNER_PROVIDER`); both default to
+`google/gemini-3.1-flash-lite`. On the 197 questions asked by people, the keywords left 96
+to the classifier; it named the question's source type, in at most two types, for 69, and
+the planner returned a valid, Arabic plan with the critic for 30 of 30
 ([docs/model_check.md](docs/model_check.md), `dalil/s8_search/model_check.py`). If the
 question cannot be embedded, a hybrid search falls back to BM25, and the result's
 `status.retrieval` says so.

@@ -4,17 +4,19 @@ Runs the engine's own code paths (``detect_source_boost_llm`` and
 ``plan_query_variants``) with each model through OpenRouter.
 
 - Classifier: the questions for which the keyword prior finds nothing, which
-  are the only ones the LLM sees at query time. Correct when the model names
-  the category of the question's topic label (topics with no source category,
-  such as adab, count when the model answers "all" or one category).
+  are the only ones the LLM sees at query time. Correct when the model names the
+  category of the question's topic label and at most ``--max-categories`` in all
+  (topics with no source category, such as adab, count when it answers "all" or
+  one category).
 - Planner: the first ``--planner-questions`` of those questions, with the
   critic. Valid when planner and critic both return usable JSON and every
   variant is Arabic.
 
     python -m dalil.s8_search.model_check --questions questions.jsonl \\
-        --models anthropic/claude-haiku-5.5 qwen/qwen3.5-flash-02-23 --summary docs/model_check.md
+        --models google/gemma-4-26b-a4b-it google/gemini-3.1-flash-lite --summary docs/model_check.md
 
-``--questions`` is JSON Lines with ``question`` and ``topic`` fields.
+``--questions`` is JSON Lines with ``id``, ``question`` and ``topic`` fields. The
+per-question results keep the id, not the question.
 """
 from __future__ import annotations
 
@@ -44,22 +46,20 @@ def engine_for(model: str) -> QueryEngine:
                        listwise_model=model, planner_model=model, planner_provider="")
 
 
-def classify(model: str, row: dict) -> dict:
-    engine = engine_for(model)
-    engine._status = {}
+def classify(model: str, row: dict, max_categories: int) -> dict:
     started = time.time()
-    found = engine.detect_source_boost_llm(row["question"])
+    found, status = engine_for(model).classify_source_type(row["question"])
     seconds = time.time() - started
-    status = engine._status.get("source_classifier", "")
     expected = TOPIC_CATEGORY.get(row.get("topic", ""))
-    if not status.startswith("ok"):
+    named = len(found or [])
+    if status != "ok":
         correct = False
     elif expected:
-        correct = bool(found) and expected in found
+        correct = bool(found) and expected in found and named <= max_categories
     else:
-        correct = found is None or len(found) == 1
-    return {"question": row["question"], "topic": row.get("topic"), "model": model, "found": found,
-            "status": status or "no answer", "correct": correct, "seconds": round(seconds, 2)}
+        correct = named <= 1
+    return {"id": row.get("id"), "topic": row.get("topic"), "model": model, "found": found, "named": named,
+            "status": status, "correct": correct, "seconds": round(seconds, 2)}
 
 
 def plan(model: str, row: dict) -> dict:
@@ -70,7 +70,7 @@ def plan(model: str, row: dict) -> dict:
     variants = [v["query"] for v in result["queries"]]
     arabic = all(ARABIC.search(v) and not CJK.search(v) for v in variants)
     valid = not result.get("error") and not result.get("critic_error") and bool(variants) and arabic
-    return {"question": row["question"], "model": model, "valid": valid, "variants": variants,
+    return {"id": row.get("id"), "model": model, "valid": valid, "variants": len(variants),
             "error": result.get("error") or result.get("critic_error"), "seconds": round(seconds, 2)}
 
 
@@ -79,6 +79,8 @@ def main() -> None:
     parser.add_argument("--questions", type=Path, required=True)
     parser.add_argument("--models", nargs="+", required=True)
     parser.add_argument("--planner-questions", type=int, default=30)
+    parser.add_argument("--max-categories", type=int, default=2,
+                        help="an answer naming more source types than this is not correct")
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--out", type=Path, help="per-question results, JSON Lines")
     parser.add_argument("--summary", type=Path, help="Markdown summary")
@@ -89,16 +91,19 @@ def main() -> None:
     planner_rows = unmatched[:args.planner_questions]
     print(f"{len(rows)} questions, {len(unmatched)} without a keyword prior")
 
-    table = ["| model | classifier correct | classifier failed | classifier median s | planner valid | planner median s |",
-             "|---|---:|---:|---:|---:|---:|"]
+    table = ["| model | classifier correct | types named, mean | classifier failed | classifier median s "
+             "| planner valid | planner median s |",
+             "|---|---:|---:|---:|---:|---:|---:|"]
     records = []
     for model in args.models:
         with ThreadPoolExecutor(max_workers=args.workers) as pool:
-            cls = list(pool.map(lambda r: classify(model, r), unmatched))
+            cls = list(pool.map(lambda r: classify(model, r, args.max_categories), unmatched))
             pln = list(pool.map(lambda r: plan(model, r), planner_rows))
         records += [{"check": "classifier", **c} for c in cls] + [{"check": "planner", **p} for p in pln]
-        failed = sum(not c["status"].startswith("ok") for c in cls)
-        line = (f"| `{model}` | {sum(c['correct'] for c in cls)}/{len(cls)} | {failed} | "
+        failed = sum(c["status"] != "ok" for c in cls)
+        answered = [c["named"] for c in cls if c["status"] == "ok"]
+        named = f"{statistics.mean(answered):.1f}" if answered else "-"
+        line = (f"| `{model}` | {sum(c['correct'] for c in cls)}/{len(cls)} | {named} | {failed} | "
                 f"{statistics.median(c['seconds'] for c in cls):.1f} | {sum(p['valid'] for p in pln)}/{len(pln)} | "
                 f"{statistics.median(p['seconds'] for p in pln):.1f} |")
         table.append(line)
@@ -110,8 +115,9 @@ def main() -> None:
         args.summary.write_text("\n".join([
             "# Classifier and planner models",
             "",
-            f"`python -m dalil.s8_search.model_check`: {len(unmatched)} questions without a keyword prior "
-            f"(of {len(rows)}), planner on the first {len(planner_rows)} with the critic.",
+            f"`python -m dalil.s8_search.model_check`: the classifier on {len(unmatched)} questions without a "
+            f"keyword prior (of {len(rows)}), correct when it names the question's source type and at most "
+            f"{args.max_categories} in all; the planner on the first {len(planner_rows)}, with the critic.",
             "",
             *table,
             "",

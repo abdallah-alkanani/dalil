@@ -14,7 +14,7 @@ import {
 } from "@openuidev/react-ui";
 import type { ReactNode } from "react";
 import { z } from "zod/v4";
-import { CiteChip, CiteChips, CitedText } from "@/components/CitedText";
+import { CiteChip, CitedText } from "@/components/cited_text";
 import { findVerbatim } from "./arabic";
 import { usePassage } from "./passages";
 
@@ -102,39 +102,32 @@ const Quote = defineComponent({
 
 const View = defineComponent({
   name: "View",
-  description: "One position within Views",
+  description: "One view within Views: who holds it and in which book, and their own words as a Quote",
   props: z.object({
-    holder: z.string().describe("Who holds it: a madhhab, scholar or group, as the passages name them"),
-    position: z.string().describe("The position and its evidence in one to three sentences, with [n] citations"),
-    // Optional, so a View written without it still renders; the text carries [n].
-    sources: z.array(z.number()).optional().describe("Passage numbers that state this position"),
+    holder: z.string().describe("Who holds the view and in which book, as the passage names them"),
+    quote: Quote.ref,
   }),
   component: () => null,
 });
 
 const Views = defineComponent({
   name: "Views",
-  description: "Side-by-side positions when the passages show more than one view on the question.",
+  description: "The views, side by side, when the passages contain more than one.",
   props: z.object({
-    title: z.string().describe("What the positions differ on, as a short phrase"),
+    title: z.string().describe("What the views differ on, as a short phrase"),
     items: z.array(View.ref),
   }),
-  component: ({ props }) => {
+  component: ({ props, renderNode }) => {
     const items = props.items ?? [];
     if (!items.length) return null;
     return (
       <section className="ans-views">
         <h3 className="ans-h">{props.title}</h3>
-        <div className="ans-views-grid" data-count={items.length}>
+        <div className="ans-views-list">
           {items.map((item, i) => (
             <div key={i} className="ans-view">
               <div className="ans-view-holder">{item?.props?.holder}</div>
-              <CitedText text={item?.props?.position ?? ""} />
-              {item?.props?.sources?.length ? (
-                <div className="ans-view-sources">
-                  <CiteChips nums={item.props.sources} />
-                </div>
-              ) : null}
+              {item?.props?.quote ? renderNode(item.props.quote) : null}
             </div>
           ))}
         </div>
