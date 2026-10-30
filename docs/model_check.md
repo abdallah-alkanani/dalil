@@ -1,6 +1,6 @@
 # Classifier and planner models
 
-`python -m dalil.s8_search.model_check` on the 197 questions asked by people in the questions dataset: the classifier on the 96 that no keyword assigns a source type (the only ones it sees at query time), correct when it names the question's source type and at most 2 in all; the planner on the first 30 of those, with the critic. Per-question results, by dataset id, in `model_check.jsonl`.
+`python -m dalil.s8_search.model_check` on the 197 questions asked by people in the questions dataset: the classifier on the 96 that no keyword assigns a source type (the only ones it sees at query time), correct when it names the question's source type and at most 2 in all; the planner on the first 30 of those, with the critic. Per-question results, by line number in the questions dataset (`question_id`), in `model_check.jsonl`.
 
 | model | classifier correct | types named, mean | classifier failed | classifier median s | planner valid | planner median s |
 |---|---:|---:|---:|---:|---:|---:|

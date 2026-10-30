@@ -9,8 +9,9 @@ views the compact search also returns in its top 10, 50 and 200.
     python -m dalil.s7_index.compact_check --questions questions.jsonl \\
         --out docs/compact_check.jsonl --summary docs/compact_check.md
 
-``--questions`` is JSON Lines with ``id`` and ``question`` fields. The results keep
-the id and the ``--group-by`` field, not the question.
+``--questions`` is JSON Lines with a ``question`` field. The results name each
+question by its line number in that file (``question_id``, from 1), and keep the
+``--group-by`` field, never the question.
 """
 from __future__ import annotations
 
@@ -31,9 +32,10 @@ from dalil.s8_search.engine import QueryEngine
 DEPTHS = (10, 50, 200)
 
 
-def load_questions(path: Path) -> list[dict]:
+def load_questions(path: Path) -> list[tuple[int, dict]]:
+    """(question_id, row) for every row with a question; the id is the row's line number."""
     rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
-    return [r for r in rows if (r.get("question") or "").strip()]
+    return [(i, r) for i, r in enumerate(rows, 1) if (r.get("question") or "").strip()]
 
 
 def embed_all(questions: list[str], db_dir: Path, workers: int) -> np.ndarray:
@@ -75,7 +77,7 @@ def main() -> None:
 
     rows = load_questions(args.questions)
     started = time.time()
-    queries = embed_all([r["question"] for r in rows], args.db_dir, args.workers)
+    queries = embed_all([r["question"] for _, r in rows], args.db_dir, args.workers)
     print(f"embedded {len(rows)} questions in {time.time() - started:.0f}s")
 
     full_path = args.db_dir / "dense_faiss_ar.index"
@@ -90,8 +92,8 @@ def main() -> None:
     print(f"exact {exact_s:.0f}s, compact {compact_s:.0f}s for {len(rows)} questions")
 
     results = []
-    for row, e, c in zip(rows, exact_ids, compact_ids):
-        result = {key: row[key] for key in ("id", args.group_by) if key in row}
+    for (question_id, row), e, c in zip(rows, exact_ids, compact_ids):
+        result = {"question_id": question_id, **{k: row[k] for k in (args.group_by,) if k in row}}
         for depth in DEPTHS:
             result[f"overlap_{depth}"] = overlap(e, c, depth)
             result[f"same_order_{depth}"] = bool(np.array_equal(e[:depth], c[:depth]))

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import time
 from collections.abc import Callable, Iterator
 from functools import lru_cache
@@ -19,6 +20,7 @@ from typing import Any
 import requests
 
 COMPONENTS_PATH = Path(__file__).parent / "answer_components.md"
+log = logging.getLogger("dalil_api.answer")
 MAX_SEARCHES = 3
 
 SEARCH_TOOL = {
@@ -127,6 +129,9 @@ def run(question: str, search: Callable[[str], list[dict[str, Any]]], *, prompt_
                             found = search(query)
                         except SearchLimit as exc:
                             result, searches = str(exc), max_searches
+                        except Exception as exc:  # the model reads the failure and may search again
+                            log.warning("search failed: %s", exc)
+                            result, searches = f"تعذّر البحث: {exc}", searches + 1
                         else:
                             searches += 1
                             new = []
@@ -179,7 +184,8 @@ class _Call:
             raise AnswerError(f"answer model HTTP {resp.status_code}: {resp.text[:500]}")
         calls: dict[int, dict[str, Any]] = {}
         try:
-            # Bytes per line, decoded whole: decoding the stream in chunks can split a character.
+            # Split as bytes, then decode: decoded text is split with str.splitlines, which
+            # also breaks at U+2028 and other separators that can sit inside a JSON string.
             for raw in resp.iter_lines():
                 line = raw.decode("utf-8")
                 if not line.startswith("data:"):
