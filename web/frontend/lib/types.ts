@@ -1,6 +1,6 @@
 export type Category = "quran" | "hadith" | "tafsir" | "fiqh" | "fiqh_usul" | "aqeedah" | "seerah";
 
-/** One search result as the Daleel API returns it (`compact_result`), numbered in rank order. */
+/** One search result as the dalil API returns it (`compact_result`), numbered in rank order. */
 export interface Passage {
   n: number;
   parent_id: string;

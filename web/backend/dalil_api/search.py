@@ -2,8 +2,7 @@
 them once, and running one query at a time.
 
 ``QueryEngine`` keeps per-query state on the instance, so queries are serialised
-with a lock. A search takes about a second; the answer step, which takes much
-longer, runs outside the lock.
+with a lock; the answer step runs outside it.
 """
 from __future__ import annotations
 
@@ -17,13 +16,13 @@ from typing import Any
 
 from .config import Settings
 
-log = logging.getLogger("daleel_api.search")
+log = logging.getLogger("dalil_api.search")
 
 
 class SearchService:
     def __init__(self, settings: Settings):
         self.settings = settings
-        self.state = "starting"  # starting | downloading | loading | ready | failed
+        self.state = "starting"  # starting | downloading | building | loading | ready | failed
         self.detail = ""
         self._engine = None
         self._lock = threading.Lock()
@@ -35,14 +34,24 @@ class SearchService:
     def _prepare(self) -> None:
         try:
             missing = self.missing_files()
-            if missing:
+            compact = self.settings.compact_file()
+            to_download = [name for name in missing if name != compact]
+            if to_download:
                 self.state = "downloading"
-                self.download(missing)
+                self.download(to_download)
+            if compact in missing:
+                # The compact index is not on the dataset; it is derived from the
+                # full index on the host, in one pass over it.
+                from dalil.s7_index.compact import build
+
+                self.state, self.detail = "building", f"building {compact}"
+                build(self.settings.db_dir / "dense_faiss_ar.index", [self.settings.compact_dims],
+                      self.settings.db_dir)
             self.state = "loading"
             self.open_engine()
             self.detail = "warming caches"
-            # The first query after boot pays for cold SQLite pages (55 s measured
-            # locally, then ~1 s); pay it here rather than in a user's request.
+            # The first query after boot reads cold SQLite pages; pay for that here
+            # rather than in a user's request.
             self._engine.query("حكم الصلاة", n_results=3, retrieval_mode="bm25")
             self.state, self.detail = "ready", ""
         except Exception as exc:  # reported by /health; the process stays up so it can be inspected

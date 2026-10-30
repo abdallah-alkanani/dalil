@@ -1,8 +1,8 @@
-/** GET /api/health -> the Daleel API's /health (search state: loading, ready, failed). */
+/** GET /api/health -> the API's /health and its search state. */
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const API = process.env.DALEEL_API_URL ?? "http://localhost:8000";
+const API = process.env.DALIL_API_URL ?? "http://localhost:8000";
 
 export async function GET() {
   try {

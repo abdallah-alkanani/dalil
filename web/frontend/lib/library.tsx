@@ -3,16 +3,16 @@
 /**
  * The OpenUI component library the answer model writes with.
  *
- * Daleel's own components refer to passages by number only. Quote takes the
- * model's copy of the words but shows the source's own span, found by
- * findVerbatim; a quote that is not in the passage is shown as unverified.
- * OpenUI's own built-ins are swapped for same-signature versions where they
- * could not show citations or hardcode English.
+ * Components refer to passages by number only. Quote shows the passage's own
+ * text where it matches the model's copy (findVerbatim), and flags a quote that
+ * is not in the passage. Table and FollowUpBlock keep OpenUI's signatures but
+ * render [n] citations and Arabic headings.
  */
 import { createLibrary, defineComponent, useIsStreaming, useTriggerAction } from "@openuidev/react-lang";
 import {
   FollowUpItem as UIFollowUpItem, Steps as UISteps, StepsItem as UIStepsItem, Tag, TextCallout,
 } from "@openuidev/react-ui";
+import type { ReactNode } from "react";
 import { z } from "zod/v4";
 import { CiteChip, CiteChips, CitedText } from "@/components/CitedText";
 import { findVerbatim } from "./arabic";
@@ -42,21 +42,41 @@ const Prose = defineComponent({
   ),
 });
 
+/** The passage's own text for the quote, with the model's **bold** parts located in it. */
+function sourceSpan(text: string, words: string): ReactNode[] | null {
+  const plain = words.replace(/\*\*/g, "");
+  const span = findVerbatim(text, plain);
+  if (!span) return null;
+  const quoted = text.slice(span[0], span[1]);
+  const bold = [...words.matchAll(/\*\*(.+?)\*\*/g)]
+    .map((m) => findVerbatim(quoted, m[1]))
+    .filter((r): r is [number, number] => r !== null)
+    .sort((a, b) => a[0] - b[0]);
+  const out: ReactNode[] = [];
+  let at = 0;
+  for (const [from, to] of bold) {
+    if (from < at) continue;
+    out.push(quoted.slice(at, from), <strong key={from}>{quoted.slice(from, to)}</strong>);
+    at = to;
+  }
+  out.push(quoted.slice(at));
+  return out;
+}
+
 function QuoteCard({ source, words }: { source: number; words: string }) {
   const streaming = useIsStreaming();
   const p = usePassage(source);
-  const haystack = p ? p.text : "";
-  const span = words ? findVerbatim(haystack, words) : null;
-  const verified = Boolean(p && span);
+  const shown = p && words ? sourceSpan(p.text, words) : null;
+  const verified = shown !== null;
   const pending = streaming && !verified;
-  const shown = verified && span ? haystack.slice(span[0], span[1]) : words;
   const hadith = p?.refs?.hadith;
   return (
     <figure className={`ans-quote ${verified ? "is-verified" : pending ? "is-pending" : "is-unverified"}`}>
-      <blockquote dir="rtl">{shown}</blockquote>
+      <blockquote dir="rtl">{shown ?? words.replace(/\*\*/g, "")}</blockquote>
       <figcaption>
         <CiteChip n={source} />
         <span className="ans-quote-cite">{p?.citation ?? "مصدر غير موجود"}</span>
+        {p?.page_number ? <span className="ans-quote-meta">ص {p.page_number}</span> : null}
         {hadith?.hadith_number ? <span className="ans-quote-meta">رقم {hadith.hadith_number}</span> : null}
         {p?.grade ? <Tag size="sm" variant="info" text={`الألباني: ${p.grade}`} /> : null}
         {verified ? (
@@ -72,10 +92,10 @@ function QuoteCard({ source, words }: { source: number; words: string }) {
 const Quote = defineComponent({
   name: "Quote",
   description:
-    "A verbatim quotation from one passage: the decisive words of a ruling, hadith or ayah. The words are checked against the passage and shown from it.",
+    "Text pasted from one passage: whole sentences exactly as written, with the part that answers the question in **bold**. Checked against the passage and shown from it.",
   props: z.object({
-    source: z.number().describe("The passage number the words are copied from"),
-    words: z.string().describe("Contiguous words copied exactly from that passage, 5 to 40 words"),
+    source: z.number().describe("The passage number the text is pasted from"),
+    words: z.string().describe("Whole sentences copied exactly from that passage; the answering part in **bold**"),
   }),
   component: ({ props }) => <QuoteCard source={props.source} words={props.words ?? ""} />,
 });
@@ -86,8 +106,7 @@ const View = defineComponent({
   props: z.object({
     holder: z.string().describe("Who holds it: a madhhab, scholar or group, as the passages name them"),
     position: z.string().describe("The position and its evidence in one to three sentences, with [n] citations"),
-    // Optional: the position text already carries [n]. When it was required, a View
-    // the model wrote without it failed validation and the whole position vanished.
+    // Optional, so a View written without it still renders; the text carries [n].
     sources: z.array(z.number()).optional().describe("Passage numbers that state this position"),
   }),
   component: () => null,
@@ -178,8 +197,7 @@ const Referral = defineComponent({
   ),
 });
 
-// OpenUI's Table renders cells as plain text, so [n] would show raw. Same
-// signature as the built-in (Table(columns: Col[]), column-oriented), cited cells.
+// OpenUI's Table signature (column-oriented) with cells that render [n] citations.
 const Col = defineComponent({
   name: "Col",
   description: "Column definition — holds label + data array",
@@ -218,8 +236,7 @@ const Table = defineComponent({
   },
 });
 
-// OpenUI's FollowUpBlock hardcodes an English "Related Queries" header, so this
-// keeps its name and props (the prompt is unchanged) and its item primitive.
+// OpenUI's FollowUpBlock signature and item primitive, with an Arabic heading.
 const FollowUpItem = defineComponent({
   name: "FollowUpItem",
   description: "Clickable follow-up suggestion — when clicked, sends text as user message",
@@ -268,7 +285,7 @@ const Answer = defineComponent({
   ),
 });
 
-export const daleelLibrary = createLibrary({
+export const library = createLibrary({
   root: "Answer",
   components: [
     Answer, Lead, Prose, Quote, Views, View, Steps, Step, Gap, Referral,

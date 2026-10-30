@@ -6,9 +6,11 @@ from unittest import mock
 import pytest
 from fastapi.testclient import TestClient
 
-from daleel_api import answer as answering
-from daleel_api.config import Settings
-from daleel_api.main import create_app
+import json
+
+from dalil_api import answer as answering
+from dalil_api.config import Settings
+from dalil_api.main import create_app
 
 ADMIN = {"Authorization": "Bearer admin-secret"}
 
@@ -75,45 +77,69 @@ def test_search_logs_and_returns_grade(client):
     assert q["query"]["results"] == [{"parent_id": "p1", "citation": "جامع الترمذي، حديث 1"}]
 
 
-def fake_generate(question, passages, **kw):
+def fake_stream(question, passages, **kw):
     assert passages[0]["n"] == 1
-    return {"text": "لا تقبل [1]", "model": "m", "finish_reason": "stop", "prompt_tokens": 10,
-            "completion_tokens": 5, "cost_usd": 0.6, "latency_ms": 1}
+    yield {"delta": 'root = Answer([lead])\n'}
+    yield {"delta": 'lead = Lead("لا تقبل [1]")'}
+    yield {"done": {"model": "m", "prompt_version": "abc", "prompt_tokens": 10, "completion_tokens": 5,
+                    "cost_usd": 0.6, "latency_ms": 1}}
 
 
-def test_ask_stores_answer_and_feedback(client):
+def ask(client, headers, question):
+    r = client.post("/ask", json={"question": question}, headers=headers)
+    events = [json.loads(line) for line in r.text.splitlines() if line.strip()] if r.status_code == 200 else []
+    return r, events
+
+
+def test_ask_streams_logs_answer_and_feedback(client):
     h = expert(client)
-    with mock.patch.object(answering, "generate", side_effect=fake_generate):
-        r = client.post("/ask", json={"question": "هل تقبل الصلاة بغير طهور؟"}, headers=h).json()
-    assert r["answer"] == "لا تقبل [1]"
+    with mock.patch.object(answering, "stream", side_effect=fake_stream):
+        r, events = ask(client, h, "هل تقبل الصلاة بغير طهور؟")
+    assert [e["type"] for e in events] == ["retrieval", "delta", "delta", "done"]
+    retrieval = events[0]
+    assert retrieval["passages"][0]["n"] == 1 and retrieval["passages"][0]["grade"] == "صحيح"
+    query_id = retrieval["query_id"]
     fb = client.post("/feedback", headers=h, json={
-        "query_id": r["query_id"], "rating": "correct",
+        "query_id": query_id, "rating": "correct",
         "passages": [{"parent_id": "p1", "relevance": "direct", "citation_ok": True}]})
     assert fb.status_code == 200
-    q = client.get(f"/queries/{r['query_id']}", headers=h).json()
-    assert q["answer"]["cost_usd"] == 0.6 and q["feedback"][0]["passages"][0]["relevance"] == "direct"
+    q = client.get(f"/queries/{query_id}", headers=h).json()
+    assert q["answer"]["text"] == 'root = Answer([lead])\nlead = Lead("لا تقبل [1]")'
+    assert q["answer"]["prompt_version"] == "abc" and q["answer"]["cost_usd"] == 0.6
+    assert q["feedback"][0]["passages"][0]["relevance"] == "direct"
     export = client.get("/admin/export", headers=ADMIN).json()["items"]
     assert export[0]["feedback"][0]["rating"] == "correct"
 
 
 def test_ask_limits(client):
     h = expert(client)
-    with mock.patch.object(answering, "generate", side_effect=fake_generate):
-        assert client.post("/ask", json={"question": "س1"}, headers=h).status_code == 200
+    with mock.patch.object(answering, "stream", side_effect=fake_stream):
+        assert ask(client, h, "س1")[0].status_code == 200
         # 0.6 + 0.6 crosses the 1.0 spend cap
-        assert client.post("/ask", json={"question": "س2"}, headers=h).status_code == 200
-        r = client.post("/ask", json={"question": "س3"}, headers=h)
+        assert ask(client, h, "س2")[0].status_code == 200
+        r, _ = ask(client, h, "س3")
     assert r.status_code == 429
 
 
 def test_answer_failure_is_logged_and_reported(client):
     h = expert(client)
-    with mock.patch.object(answering, "generate", side_effect=answering.AnswerError("model gone")):
-        r = client.post("/ask", json={"question": "سؤال"}, headers=h)
-    assert r.status_code == 502 and r.json()["detail"]["error"] == "model gone"
+    with mock.patch.object(answering, "stream", side_effect=answering.AnswerError("model gone")):
+        r, events = ask(client, h, "سؤال")
+    assert events[-1] == {"type": "error", "stage": "answer", "message": "model gone"}
+    q = client.get(f"/queries/{events[0]['query_id']}", headers=h).json()
+    assert q["query"]["error"] == "model gone" and q["answer"] is None
 
 
 def test_prompt_renders_grade_and_neighbours():
     msg = answering.render_user_message("س", [{"n": 1, "citation": "c", "grade": "صحيح", "text": "t",
                                                "neighbours": [{"offset": 1, "citation": "c2", "text": "t2"}]}])
     assert "حكم الألباني: صحيح" in msg and "t2" in msg
+
+
+def test_system_prompt_is_the_repository_prompt_then_the_components():
+    settings = Settings()
+    prompt, version = answering.system_prompt(settings.answer_prompt_path)
+    repo_prompt = settings.answer_prompt_path.read_text(encoding="utf-8").rstrip()
+    assert prompt.startswith(repo_prompt)
+    assert "Answer(blocks:" in prompt[len(repo_prompt):]
+    assert len(version) == 12

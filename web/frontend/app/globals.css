@@ -70,6 +70,21 @@ button { font: inherit; color: inherit; }
 
 .thread { max-width: 780px; margin: 0 auto; padding: 36px 24px 260px; }
 
+.topbar-user { font-size: 13px; color: var(--ink-2); }
+.topbar-out { margin-top: 0; font-size: 13px; }
+
+/* ── sign in ───────────────────────────────────────────────────────────── */
+
+.signin { max-width: 380px; margin: 0 auto; padding: 14vh 24px 40px; text-align: center; }
+.signin-form { display: flex; flex-direction: column; gap: 14px; text-align: start; margin-top: 8px; }
+.signin-form label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--ink-2); }
+.signin-form input {
+  font: inherit; font-size: 16px; color: var(--ink); padding: 10px 12px;
+  background: var(--card); border: 1px solid var(--line-2); border-radius: 10px; outline: 0;
+}
+.signin-form input:focus { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+.signin-error { margin: 0; font-size: 14px; color: #8d2f22; }
+
 /* ── welcome ───────────────────────────────────────────────────────────── */
 
 .welcome { padding-top: 9vh; text-align: center; }

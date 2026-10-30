@@ -1,9 +1,10 @@
-"""Daleel API: search, cited answers, and expert feedback.
+"""dalil API: search, cited answers, and expert feedback.
 
-    uvicorn daleel_api.main:app --host 0.0.0.0 --port $PORT
+    uvicorn dalil_api.main:app --host 0.0.0.0 --port $PORT
 """
 from __future__ import annotations
 
+import json
 import logging
 import time
 from contextlib import asynccontextmanager
@@ -11,6 +12,7 @@ from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
@@ -21,7 +23,7 @@ from .config import Settings
 from .search import SearchService, compact_result
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-log = logging.getLogger("daleel_api")
+log = logging.getLogger("dalil_api")
 
 Category = Literal["quran", "hadith", "tafsir", "fiqh", "fiqh_usul", "aqeedah", "seerah"]
 
@@ -38,7 +40,7 @@ def create_app(settings: Settings | None = None, search: SearchService | None = 
             app.state.search.start_background()
         yield
 
-    app = FastAPI(title="Daleel API", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="dalil API", version="0.1.0", lifespan=lifespan)
     if settings.cors_origins:
         app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins,
                            allow_methods=["*"], allow_headers=["*"])
@@ -110,9 +112,9 @@ def _check_quota(request: Request, user: dict[str, Any], kind: str) -> None:
         raise HTTPException(429, f"Daily limit of {per_user} {kind}s reached; it resets at 00:00 UTC")
     if kind == "ask":
         if store.count_today(db, "ask") >= s.global_daily_asks:
-            raise HTTPException(429, "Daleel has reached today's question limit; it resets at 00:00 UTC")
+            raise HTTPException(429, "Today's question limit has been reached; it resets at 00:00 UTC")
         if store.spend_today(db) >= s.daily_spend_cap_usd:
-            raise HTTPException(429, "Daleel has reached today's spending limit; it resets at 00:00 UTC")
+            raise HTTPException(429, "Today's spending limit has been reached; it resets at 00:00 UTC")
 
 
 def _run_search(search: SearchService, question: str, *, n_results: int, categories, query_planning: str,
@@ -136,6 +138,16 @@ def _log_query(db, *, user_id: int, kind: str, question: str, params: dict, stat
         )).inserted_primary_key[0]
 
 
+def _event(event: dict[str, Any]) -> str:
+    return json.dumps(event, ensure_ascii=False) + "\n"
+
+
+def _finish_query(db, query_id: int, started: float, error: str | None) -> None:
+    with db.begin() as conn:
+        conn.execute(store.queries.update().where(store.queries.c.id == query_id).values(
+            latency_ms=int((time.time() - started) * 1000), error=error))
+
+
 # ── routes ──────────────────────────────────────────────────────────────────────
 def _routes(app: FastAPI) -> None:
     @app.get("/health")
@@ -152,7 +164,7 @@ def _routes(app: FastAPI) -> None:
         return {
             "search": search.state, "detail": search.detail, "missing_files": search.missing_files(),
             "compact_dims": s.compact_dims, "answer_model": s.answer_model,
-            "openrouter_key_set": bool(s.openrouter_api_key),
+            "openrouter_key_set": bool(s.openrouter_api_key), "answer_key_set": bool(s.answer_api_key),
             "today": {"asks": store.count_today(db, "ask"), "searches": store.count_today(db, "search"),
                       "spend_usd": round(store.spend_today(db), 4), "spend_cap_usd": s.daily_spend_cap_usd},
         }
@@ -189,50 +201,59 @@ def _routes(app: FastAPI) -> None:
                 "error": payload.get("error")}
 
     @app.post("/ask")
-    def ask(body: AskBody, request: Request, user: dict = CurrentUser) -> dict[str, Any]:
+    def ask(body: AskBody, request: Request, user: dict = CurrentUser) -> StreamingResponse:
+        """The answer as NDJSON events: ``retrieval`` (query id and the numbered
+        passages), ``delta`` (OpenUI Lang text), then ``done`` or ``error``. The
+        question, passages and answer are logged; the daily caps apply."""
         s: Settings = request.app.state.settings
         db = request.app.state.db
         search = _require_ready(request)
         _check_quota(request, user, "ask")
-        started = time.time()
-        payload, results = _run_search(
-            search, body.question, n_results=s.answer_passages, categories=body.categories,
-            query_planning=body.query_planning, rerank=body.rerank, expand_neighbours=1,
-            passage_max_chars=s.passage_max_chars)
-        status = payload.get("status", {})
-        passages = answering.number_passages(results)
-        error = payload.get("error")
-        generated = None
-        if passages:
+
+        def events():
+            started = time.time()
+            payload, results = _run_search(
+                search, body.question, n_results=s.answer_passages, categories=body.categories,
+                query_planning=body.query_planning, rerank=body.rerank, expand_neighbours=1,
+                passage_max_chars=s.passage_max_chars)
+            status = payload.get("status", {})
+            passages = answering.number_passages(results)
+            query_id = _log_query(db, user_id=user["id"], kind="ask", question=body.question,
+                                  params=body.model_dump(exclude={"question"}), status=status,
+                                  results=results, latency_ms=int((time.time() - started) * 1000),
+                                  error=payload.get("error"))
+            yield _event({"type": "retrieval", "query_id": query_id, "status": status,
+                          "latency_ms": int((time.time() - started) * 1000), "passages": passages})
+            if not passages:
+                yield _event({"type": "error", "stage": "search", "message": payload.get("error") or "no passages"})
+                return
+            text, done = "", None
             try:
-                generated = answering.generate(body.question, passages, api_key=s.openrouter_api_key,
-                                               model=s.answer_model, max_tokens=s.answer_max_tokens)
+                for part in answering.stream(
+                        body.question, passages, prompt_path=s.answer_prompt_path, base_url=s.answer_base_url,
+                        api_key=s.answer_api_key, model=s.answer_model, max_tokens=s.answer_max_tokens,
+                        reasoning_effort=s.answer_reasoning_effort):
+                    if "delta" in part:
+                        text += part["delta"]
+                        yield _event({"type": "delta", "text": part["delta"]})
+                    else:
+                        done = part["done"]
             except answering.AnswerError as exc:
-                error = str(exc)
                 log.warning("answer failed: %s", exc)
-        latency = int((time.time() - started) * 1000)
-        query_id = _log_query(db, user_id=user["id"], kind="ask", question=body.question,
-                              params=body.model_dump(exclude={"question"}), status=status,
-                              results=results, latency_ms=latency, error=error)
-        if generated:
+                _finish_query(db, query_id, started, str(exc))
+                yield _event({"type": "error", "stage": "answer", "message": str(exc)})
+                return
             with db.begin() as conn:
                 conn.execute(store.answers.insert().values(
-                    query_id=query_id, model=generated["model"], prompt_version=answering.PROMPT_VERSION,
-                    text=generated["text"], passages=[{"n": p["n"], "parent_id": p["parent_id"],
-                                                       "citation": p["citation"]} for p in passages],
-                    prompt_tokens=generated["prompt_tokens"], completion_tokens=generated["completion_tokens"],
-                    cost_usd=generated["cost_usd"], latency_ms=generated["latency_ms"]))
-        if generated is None and passages:
-            raise HTTPException(502, {"query_id": query_id, "error": error})
-        return {
-            "query_id": query_id,
-            "answer": generated["text"] if generated else None,
-            "no_passages": not passages,
-            "passages": passages,
-            "status": {**status, "answer_model": generated["model"] if generated else None},
-            "latency_ms": latency,
-            "error": error,
-        }
+                    query_id=query_id, model=done["model"], prompt_version=done["prompt_version"], text=text,
+                    passages=[{"n": p["n"], "parent_id": p["parent_id"], "citation": p["citation"]} for p in passages],
+                    prompt_tokens=done["prompt_tokens"], completion_tokens=done["completion_tokens"],
+                    cost_usd=done["cost_usd"], latency_ms=done["latency_ms"]))
+            _finish_query(db, query_id, started, None)
+            yield _event({"type": "done", "model": done["model"], "cost_usd": done["cost_usd"],
+                          "latency_ms": int((time.time() - started) * 1000)})
+
+        return StreamingResponse(events(), media_type="application/x-ndjson")
 
     @app.get("/queries/{query_id}")
     def get_query(query_id: int, request: Request, user: dict = CurrentUser) -> dict[str, Any]:

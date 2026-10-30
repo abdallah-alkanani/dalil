@@ -1,12 +1,12 @@
 {
-  "name": "daleel-frontend",
+  "name": "dalil-frontend",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "prompt": "tsx scripts/gen-prompt.tsx",
-    "dev": "npm run prompt && next dev --port 3300",
-    "build": "npm run prompt && next build",
+    "prompt": "tsx scripts/gen_prompt.tsx",
+    "dev": "next dev --port 3300",
+    "build": "next build",
     "start": "next start --port 3300",
     "typecheck": "tsc --noEmit"
   },

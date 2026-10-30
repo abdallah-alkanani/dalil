@@ -3,7 +3,7 @@
 import { Renderer, type ActionEvent } from "@openuidev/react-lang";
 import { Button, Skeleton, ThemeProvider, createTheme } from "@openuidev/react-ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { daleelLibrary } from "@/lib/library";
+import { library } from "@/lib/library";
 import { PassagesContext } from "@/lib/passages";
 import { CATEGORY_LABELS, type AskEvent, type Category, type Passage, type Retrieval } from "@/lib/types";
 import { SourceDrawer } from "./SourceDrawer";
@@ -51,7 +51,77 @@ const EXAMPLES = [
 
 const CATEGORIES = Object.keys(CATEGORY_LABELS) as Category[];
 
-export function Daleel() {
+interface User {
+  id: number;
+  name: string;
+  role: string;
+}
+
+export function Dalil() {
+  // undefined while checking the session, null when signed out.
+  const [user, setUser] = useState<User | null | undefined>(undefined);
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setUser, () => setUser(null));
+  }, []);
+  const signOut = async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    setUser(null);
+  };
+
+  return (
+    <ThemeProvider mode="light" lightTheme={theme}>
+      {user === undefined ? null : user === null ? (
+        <SignIn onSignedIn={setUser} />
+      ) : (
+        <Research user={user} onSignOut={signOut} onSignedOut={() => setUser(null)} />
+      )}
+    </ThemeProvider>
+  );
+}
+
+function SignIn({ onSignedIn }: { onSignedIn: (u: User) => void }) {
+  const [code, setCode] = useState("");
+  const [name, setName] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    const r = await fetch("/api/auth/redeem", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ code: code.trim(), name: name.trim() }),
+    });
+    setBusy(false);
+    if (r.ok) onSignedIn((await r.json()).user);
+    else setError(r.status === 403 ? "رمز الدعوة غير صالح أو مستعمل." : "تعذّر الدخول، حاول مرة أخرى.");
+  };
+  return (
+    <main className="signin">
+      <h1 className="welcome-title">دليل</h1>
+      <p className="welcome-sub">الدخول برمز دعوة.</p>
+      <form className="signin-form" onSubmit={submit}>
+        <label>
+          <span>الاسم</span>
+          <input value={name} onChange={(e) => setName(e.target.value)} required maxLength={200} autoComplete="name" />
+        </label>
+        <label>
+          <span>رمز الدعوة</span>
+          <input value={code} onChange={(e) => setCode(e.target.value)} required dir="ltr" autoComplete="off" />
+        </label>
+        {error ? <p className="signin-error">{error}</p> : null}
+        <Button variant="primary" size="medium" type="submit" disabled={busy || !code.trim() || !name.trim()}>
+          {busy ? "جارٍ…" : "دخول"}
+        </Button>
+      </form>
+    </main>
+  );
+}
+
+function Research({ user, onSignOut, onSignedOut }: { user: User; onSignOut: () => void; onSignedOut: () => void }) {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [drawer, setDrawer] = useState<{ turnId: number; n: number } | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -75,7 +145,8 @@ export function Daleel() {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ question: q, categories: cats }),
         });
-        if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+        if (res.status === 401) return onSignedOut();
+        if (!res.body) throw new Error(`HTTP ${res.status}`);
         const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
         let buf = "";
         for (;;) {
@@ -105,56 +176,58 @@ export function Daleel() {
         patch(id, () => ({ phase: "error", error: String(err) }));
       }
     },
-    [categories, patch],
+    [categories, patch, onSignedOut],
   );
 
   const drawerTurn = drawer ? turns.find((t) => t.id === drawer.turnId) : undefined;
   const drawerPassage = drawerTurn?.retrieval?.passages.find((p) => p.n === drawer?.n);
 
   return (
-    <ThemeProvider mode="light" lightTheme={theme}>
-      <div className={`shell ${drawerPassage ? "has-drawer" : ""}`}>
-        <header className="topbar">
-          <button type="button" className="wordmark" onClick={() => setTurns([])} aria-label="دليل — البداية">
-            دليل
-          </button>
-          <span className="topbar-sub">بحث موثّق في كتب التراث</span>
-          <span className="topbar-spacer" />
-          <BackendStatus />
-        </header>
+    <div className={`shell ${drawerPassage ? "has-drawer" : ""}`}>
+      <header className="topbar">
+        <button type="button" className="wordmark" onClick={() => setTurns([])} aria-label="دليل — البداية">
+          دليل
+        </button>
+        <span className="topbar-sub">بحث موثّق في كتب التراث</span>
+        <span className="topbar-spacer" />
+        <BackendStatus />
+        <span className="topbar-user">{user.name}</span>
+        <button type="button" className="link-btn topbar-out" onClick={onSignOut}>
+          خروج
+        </button>
+      </header>
 
-        <main className="thread">
-          {turns.length === 0 ? (
-            <Welcome onAsk={(q) => ask(q)} />
-          ) : (
-            turns.map((t) => (
-              <TurnView
-                key={t.id}
-                turn={t}
-                activeN={drawer?.turnId === t.id ? drawer.n : undefined}
-                onOpen={(n) => setDrawer({ turnId: t.id, n })}
-                onFollowUp={(q) => ask(q, t.categories)}
-                onRated={(rating) => patch(t.id, () => ({ rating }))}
-                busy={busy}
-              />
-            ))
-          )}
-          <div ref={endRef} />
-        </main>
+      <main className="thread">
+        {turns.length === 0 ? (
+          <Welcome onAsk={(q) => ask(q)} />
+        ) : (
+          turns.map((t) => (
+            <TurnView
+              key={t.id}
+              turn={t}
+              activeN={drawer?.turnId === t.id ? drawer.n : undefined}
+              onOpen={(n) => setDrawer({ turnId: t.id, n })}
+              onFollowUp={(q) => ask(q, t.categories)}
+              onRated={(rating) => patch(t.id, () => ({ rating }))}
+              busy={busy}
+            />
+          ))
+        )}
+        <div ref={endRef} />
+      </main>
 
-        <Composer busy={busy} categories={categories} setCategories={setCategories} onAsk={(q) => ask(q)} />
+      <Composer busy={busy} categories={categories} setCategories={setCategories} onAsk={(q) => ask(q)} />
 
-        {drawerPassage && drawerTurn?.retrieval ? (
-          <SourceDrawer
-            passage={drawerPassage}
-            queryId={drawerTurn.retrieval.query_id}
-            total={drawerTurn.retrieval.passages.length}
-            onNavigate={(n) => setDrawer({ turnId: drawerTurn.id, n })}
-            onClose={() => setDrawer(null)}
-          />
-        ) : null}
-      </div>
-    </ThemeProvider>
+      {drawerPassage && drawerTurn?.retrieval ? (
+        <SourceDrawer
+          passage={drawerPassage}
+          queryId={drawerTurn.retrieval.query_id}
+          total={drawerTurn.retrieval.passages.length}
+          onNavigate={(n) => setDrawer({ turnId: drawerTurn.id, n })}
+          onClose={() => setDrawer(null)}
+        />
+      ) : null}
+    </div>
   );
 }
 
@@ -271,7 +344,7 @@ function TurnView({
           <div className="answer">
             <Renderer
               response={turn.answer}
-              library={daleelLibrary}
+              library={library}
               isStreaming={streaming}
               onAction={onAction}
             />

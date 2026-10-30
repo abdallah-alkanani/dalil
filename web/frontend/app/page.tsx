@@ -1,5 +1,5 @@
-import { Daleel } from "@/components/Daleel";
+import { Dalil } from "@/components/Dalil";
 
 export default function Page() {
-  return <Daleel />;
+  return <Dalil />;
 }
