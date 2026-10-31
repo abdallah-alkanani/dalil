@@ -1,0 +1,14 @@
+# The API image (web/backend/Dockerfile) needs dalil/, prompts/, pyproject.toml,
+# README.md, LICENSE and web/backend/.
+.git
+data
+recipe
+docs
+tests
+web/frontend
+**/.venv*
+**/__pycache__
+**/*.pyc
+**/*_test.py
+**/.env
+**/.env.*

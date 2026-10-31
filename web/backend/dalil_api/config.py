@@ -26,11 +26,11 @@ def _database_url() -> str:
 
 
 def _default_prompt_path() -> Path:
-    """prompts/answering_system_prompt.md at the repository root, or the copy
-    scripts/sync_dalil.sh puts in vendor/ (and the Docker image in /opt/dalil)."""
+    """prompts/answering_system_prompt.md at the repository root, or the copy the
+    Docker image puts in /opt/dalil."""
     name = Path("prompts") / "answering_system_prompt.md"
     parents = Path(__file__).resolve().parents
-    roots = ([parents[3]] if len(parents) > 3 else []) + [parents[1] / "vendor", Path("/opt/dalil")]
+    roots = ([parents[3]] if len(parents) > 3 else []) + [Path("/opt/dalil")]
     for root in roots:
         if (root / name).exists():
             return root / name

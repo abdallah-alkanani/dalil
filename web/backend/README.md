@@ -54,7 +54,7 @@ Every search and answer reports what actually ran in `status`: `retrieval`
 | `ANSWER_MODEL` | default `deepseek-v4.1-flash:1017` |
 | `ANSWER_REASONING_EFFORT` | sent as `reasoning_effort`; default `none`, empty sends nothing |
 | `ANSWER_MAX_TOKENS`, `ANSWER_PASSAGES`, `PASSAGE_MAX_CHARS` | 6000; passages per search, 8; characters per passage, 3000 |
-| `ANSWER_PROMPT_PATH` | the answering prompt; default `prompts/answering_system_prompt.md` at the repository root, or the copy in `vendor/` |
+| `ANSWER_PROMPT_PATH` | the answering prompt; default `prompts/answering_system_prompt.md` at the repository root, or its copy in the Docker image |
 | `ADMIN_TOKEN` | bearer token for the admin routes |
 | `SITE_TOKEN` | bearer token the web app's server sends with every visitor's call; the same value as the web app's `SITE_TOKEN` |
 | `GEOIP_DB` | DB-IP country database (`.mmdb`) for questions whose host sends no country; the Docker image downloads it with `scripts/download_country_db.py`. [IP Geolocation by DB-IP](https://db-ip.com), CC BY 4.0 |
@@ -76,9 +76,22 @@ not on the dataset: when it is missing, the API builds it on the host from
 
 ## Run and deploy
 
+The API runs on the dalil package at the repository root:
+
 ```bash
-./scripts/sync_dalil.sh                      # copy the dalil package and the answering prompt into vendor/
-PYTHONPATH=vendor .venv/bin/python -m pytest dalil_api
-DALIL_DATA_DIR=../../data PYTHONPATH=vendor .venv/bin/uvicorn dalil_api.main:app --port 8000
-./scripts/sync_dalil.sh && railway up        # Dockerfile build on Railway
+PYTHONPATH=../.. .venv/bin/python -m pytest dalil_api
+DALIL_DATA_DIR=../../data ADMIN_TOKEN=... SITE_TOKEN=... \
+  PYTHONPATH=../.. .venv/bin/uvicorn dalil_api.main:app --port 8000
 ```
+
+The image is built from the repository root, which holds the package and the answering
+prompt:
+
+```bash
+docker build -f web/backend/Dockerfile -t dalil-api .    # from the repository root
+```
+
+On Railway the service builds from the repository root: leave Root Directory empty and set
+the config file to `/web/backend/railway.json` (the Dockerfile and the health check), or set
+`RAILWAY_DOCKERFILE_PATH=web/backend/Dockerfile`. Deploy from GitHub, or with `railway up`
+from the repository root.

@@ -2,4 +2,3 @@
 data/
 .env
 __pycache__/
-vendor/
