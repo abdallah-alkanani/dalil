@@ -19,8 +19,8 @@ const naskh = Amiri({
 });
 
 export const metadata: Metadata = {
-  title: "دليل — بحث موثّق في كتب التراث",
-  description: "Arabic-first retrieval over classical Islamic texts, with cited answers.",
+  title: "دليل — من القرآن والسنة وأقوال أهل العلم",
+  description: "اسأل، وتأتيك الإجابة من القرآن والسنة وأقوال أهل العلم، وكل جملة فيها موثّقة بمصدرها.",
 };
 
 export const viewport: Viewport = {

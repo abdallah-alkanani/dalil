@@ -127,7 +127,7 @@ function Research() {
         <button type="button" className="wordmark" onClick={() => setTurns([])} aria-label="دليل — البداية">
           دليل
         </button>
-        <span className="topbar-sub">بحث موثّق في كتب التراث</span>
+        <span className="topbar-sub">من القرآن والسنة وأقوال أهل العلم</span>
         <span className="topbar-spacer" />
         <VisitorName />
       </header>
