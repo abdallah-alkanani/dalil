@@ -27,6 +27,8 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
+  // Android Chrome: the on-screen keyboard shrinks the page, so the question box stays above it.
+  interactiveWidget: "resizes-content",
   themeColor: "#f7f5f0",
 };
 

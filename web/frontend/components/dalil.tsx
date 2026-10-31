@@ -414,6 +414,24 @@ function Composer({
 }) {
   const [text, setText] = useState("");
   const ref = useRef<HTMLTextAreaElement>(null);
+  // Safari on iPhone never shrinks the page for the keyboard; only the visible area
+  // shrinks, so a box fixed to the bottom ends up behind it. Lift it by what the
+  // keyboard covers. Where the page does shrink, this measures 0.
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (centered || !vv) return;
+    const root = document.documentElement;
+    const place = () =>
+      root.style.setProperty("--keyboard-inset", `${Math.max(0, window.innerHeight - vv.height - vv.offsetTop)}px`);
+    place();
+    vv.addEventListener("resize", place);
+    vv.addEventListener("scroll", place);
+    return () => {
+      vv.removeEventListener("resize", place);
+      vv.removeEventListener("scroll", place);
+      root.style.removeProperty("--keyboard-inset");
+    };
+  }, [centered]);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
