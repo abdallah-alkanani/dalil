@@ -1,4 +1,4 @@
-# Runtime deps of dalil.s8_search (the dalil package is copied in by scripts/sync_dalil.sh)
+# Runtime deps of dalil.s8_search (the Dockerfile installs the dalil package from the repository root)
 numpy>=2.0
 faiss-cpu>=1.10
 requests>=2.31

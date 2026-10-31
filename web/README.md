@@ -8,9 +8,9 @@
 Run the API on the stores in `data/db`, then the app against it:
 
 ```bash
-cd web/backend && ./scripts/sync_dalil.sh        # copies the dalil package and the answering prompt into vendor/
+cd web/backend
 DALIL_DATA_DIR=../../data ADMIN_TOKEN=... SITE_TOKEN=... \
-  PYTHONPATH=vendor .venv/bin/uvicorn dalil_api.main:app --port 8000
+  PYTHONPATH=../.. .venv/bin/uvicorn dalil_api.main:app --port 8000
 
 cd web/frontend && cp .env.example .env.local    # DALIL_API_URL, SITE_TOKEN
 npm install && npm run dev                       # http://localhost:3300
