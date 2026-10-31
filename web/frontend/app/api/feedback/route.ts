@@ -1,4 +1,4 @@
-/** POST /api/feedback -> the API's /feedback, as the signed-in visitor. */
+/** POST /api/feedback -> the API's /feedback for this visitor. */
 import { api } from "@/lib/session";
 
 export const runtime = "nodejs";

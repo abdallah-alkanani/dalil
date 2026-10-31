@@ -10,7 +10,7 @@
  */
 import { createLibrary, defineComponent, useIsStreaming, useTriggerAction } from "@openuidev/react-lang";
 import {
-  FollowUpItem as UIFollowUpItem, Steps as UISteps, StepsItem as UIStepsItem, Tag, TextCallout,
+  FollowUpItem as UIFollowUpItem, Steps as UISteps, StepsItem as UIStepsItem, TextCallout,
 } from "@openuidev/react-ui";
 import type { ReactNode } from "react";
 import { z } from "zod/v4";
@@ -67,23 +67,16 @@ function QuoteCard({ source, words }: { source: number; words: string }) {
   const streaming = useIsStreaming();
   const p = usePassage(source);
   const shown = p && words ? sourceSpan(p.text, words) : null;
-  const verified = shown !== null;
-  const pending = streaming && !verified;
   const hadith = p?.refs?.hadith;
   return (
-    <figure className={`ans-quote ${verified ? "is-verified" : pending ? "is-pending" : "is-unverified"}`}>
+    <figure className={`ans-quote ${streaming && shown === null ? "is-pending" : ""}`}>
       <blockquote dir="rtl">{shown ?? words.replace(/\*\*/g, "")}</blockquote>
       <figcaption>
         <CiteChip n={source} />
         <span className="ans-quote-cite">{p?.citation ?? "مصدر غير موجود"}</span>
         {p?.page_number ? <span className="ans-quote-meta">ص {p.page_number}</span> : null}
         {hadith?.hadith_number ? <span className="ans-quote-meta">رقم {hadith.hadith_number}</span> : null}
-        {p?.grade ? <Tag size="sm" variant="info" text={`الألباني: ${p.grade}`} /> : null}
-        {verified ? (
-          <Tag size="sm" variant="success" text="مطابق للمصدر" />
-        ) : pending ? null : (
-          <Tag size="sm" variant="warning" text="لم يُعثر عليه حرفيًا في المصدر" />
-        )}
+        {p?.grade ? <span className="ans-quote-meta">حكم الألباني: {p.grade}</span> : null}
       </figcaption>
     </figure>
   );

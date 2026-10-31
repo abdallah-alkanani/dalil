@@ -10,3 +10,5 @@ sqlalchemy>=2.0
 psycopg[binary]>=3.2
 # Pulls the search stores into the volume on first boot
 huggingface_hub>=0.25
+# The country of each question, from DB-IP's offline database
+maxminddb>=2.6

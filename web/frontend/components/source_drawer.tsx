@@ -1,6 +1,6 @@
 "use client";
 
-import { IconButton, Tag } from "@openuidev/react-ui";
+import { IconButton } from "@openuidev/react-ui";
 import { useEffect, useState } from "react";
 import { CATEGORY_LABELS, type Passage } from "@/lib/types";
 
@@ -11,7 +11,7 @@ const RELEVANCE = [
   { value: "irrelevant", label: "غير ذي صلة" },
 ] as const;
 
-/** One passage in full, with the expert's relevance judgment (POST /feedback). */
+/** One passage in full, with the reader's relevance judgment (POST /feedback). */
 export function SourceDrawer({
   passage: p, queryId, total, onNavigate, onClose,
 }: {
@@ -79,15 +79,14 @@ export function SourceDrawer({
         </div>
       </div>
 
-      <div className="drawer-tags">
-        {p.category ? <Tag size="sm" variant="neutral" text={CATEGORY_LABELS[p.category]} /> : null}
-        {hadith?.hadith_number ? <Tag size="sm" variant="neutral" text={`حديث رقم ${hadith.hadith_number}`} /> : null}
-        {quran?.surah ? <Tag size="sm" variant="neutral" text={`سورة ${quran.surah}، آية ${quran.ayah ?? ""}`} /> : null}
-        {p.page_number ? <Tag size="sm" variant="neutral" text={`ص ${p.page_number}`} /> : null}
-        {p.grade ? <Tag size="sm" variant="info" text={`الألباني: ${p.grade}`} /> : null}
-        {p.retrieval_sources.map((s) => (
-          <Tag key={s} size="sm" variant="neutral" text={s === "bm25" ? "مطابقة لفظية" : s === "dense" ? "مطابقة دلالية" : s} />
-        ))}
+      <div className="drawer-meta">
+        {[
+          p.category ? CATEGORY_LABELS[p.category] : null,
+          hadith?.hadith_number ? `حديث رقم ${hadith.hadith_number}` : null,
+          quran?.surah ? `سورة ${quran.surah}، آية ${quran.ayah ?? ""}` : null,
+          p.page_number ? `ص ${p.page_number}` : null,
+          p.grade ? `حكم الألباني: ${p.grade}` : null,
+        ].filter(Boolean).join(" · ")}
       </div>
 
       <div className="drawer-scroll">

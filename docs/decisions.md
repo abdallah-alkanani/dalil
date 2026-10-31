@@ -93,9 +93,16 @@ Each decision names the code that implements it.
   tool calls on that endpoint.
 - **Quotes are checked.** Components refer to passages by number. `Quote` matches the model's
   words against the passage, ignoring diacritics, alef forms and punctuation, and shows the
-  passage's own text, or a warning when the words are not in it (`web/frontend/lib/arabic.ts`).
-- **Invite-only.** Each visitor signs in with an invite code and gets their own API token, kept
-  in an httpOnly cookie, so the per-user caps apply to every visitor.
+  passage's own text when they are (`web/frontend/lib/arabic.ts`).
+- **Open to everyone, without tracking.** There is no sign-in. Each browser gets a random visitor
+  id in an httpOnly cookie, stored by the API only as a hash; a visitor may give a name. Each
+  question keeps the two-letter country it came from: the host's country header, or else the IP
+  looked up in DB-IP's offline country database. No IP is stored or logged
+  (`web/backend/dalil_api/auth.py`, `country.py`).
+- **Only the site calls the API.** The site's server sends `SITE_TOKEN` with every call, so the
+  per-visitor caps cannot be dodged by calling the API directly with made-up visitors.
+- **A visitor exists once they act.** Opening the page creates no visitor; the first question,
+  search or name does.
 
 ## Pipeline
 

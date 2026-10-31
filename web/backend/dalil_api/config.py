@@ -48,6 +48,10 @@ class Settings:
     database_url: str = field(default_factory=_database_url)
     openrouter_api_key: str = field(default_factory=lambda: os.environ.get("OPENROUTER_API_KEY", "").strip())
     admin_token: str = field(default_factory=lambda: os.environ.get("ADMIN_TOKEN", "").strip())
+    # Shared with the web app's server, which calls the API for every visitor.
+    site_token: str = field(default_factory=lambda: os.environ.get("SITE_TOKEN", "").strip())
+    # Offline DB-IP country database (.mmdb), for requests whose host sends no country.
+    geoip_db: str = field(default_factory=lambda: os.environ.get("GEOIP_DB", "").strip())
 
     # The answer model: any OpenAI-compatible chat endpoint that streams.
     answer_base_url: str = field(default_factory=lambda: os.environ.get(

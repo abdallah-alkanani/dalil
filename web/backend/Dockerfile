@@ -14,6 +14,11 @@ RUN pip install -r requirements.txt
 COPY vendor/ /opt/dalil/
 RUN pip install --no-deps /opt/dalil
 
+# DB-IP's country database (CC BY 4.0), for the country of each question.
+COPY scripts/download_country_db.py /tmp/
+RUN python /tmp/download_country_db.py /opt/geo/country.mmdb && rm /tmp/download_country_db.py
+ENV GEOIP_DB=/opt/geo/country.mmdb
+
 COPY dalil_api/ dalil_api/
 
 CMD ["sh", "-c", "uvicorn dalil_api.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]

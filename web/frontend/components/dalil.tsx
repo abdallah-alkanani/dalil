@@ -1,7 +1,7 @@
 "use client";
 
 import { Renderer, type ActionEvent } from "@openuidev/react-lang";
-import { Button, Skeleton, ThemeProvider, createTheme } from "@openuidev/react-ui";
+import { Button, ThemeProvider, createTheme } from "@openuidev/react-ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { library } from "@/lib/library";
 import { PassagesContext } from "@/lib/passages";
@@ -37,99 +37,20 @@ interface Turn {
   retrieval?: Retrieval;
   answer: string;
   error?: string;
-  model?: string;
-  cost?: number | null;
-  totalMs?: number;
   rating?: string;
 }
 
-const EXAMPLES = [
-  { q: "ما حكم المسح على الخفين وما شروطه؟", hint: "فقه · أقوال وأدلة" },
-  { q: "إنما الأعمال بالنيات", hint: "حديث · تخريج ونص" },
-  { q: "ما تفسير قوله تعالى: إن مع العسر يسرا؟", hint: "تفسير" },
-  { q: "حلفت بالطلاق إن فعلت كذا ثم فعلته، فما الحكم؟", hint: "مسألة شخصية · إحالة" },
-];
-
 const CATEGORIES = Object.keys(CATEGORY_LABELS) as Category[];
 
-interface User {
-  id: number;
-  name: string;
-  role: string;
-}
-
 export function Dalil() {
-  // undefined while checking the session, null when signed out.
-  const [user, setUser] = useState<User | null | undefined>(undefined);
-  useEffect(() => {
-    fetch("/api/auth/me")
-      .then((r) => (r.ok ? r.json() : null))
-      .then(setUser, () => setUser(null));
-  }, []);
-  const signOut = async () => {
-    await fetch("/api/auth/logout", { method: "POST" });
-    setUser(null);
-  };
-
   return (
     <ThemeProvider mode="light" lightTheme={theme}>
-      {user === undefined ? null : user === null ? (
-        <SignIn onSignedIn={setUser} />
-      ) : (
-        <Research user={user} onSignOut={signOut} onSignedOut={() => setUser(null)} />
-      )}
+      <Research />
     </ThemeProvider>
   );
 }
 
-function SignIn({ onSignedIn }: { onSignedIn: (u: User) => void }) {
-  const [code, setCode] = useState("");
-  const [name, setName] = useState("");
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    setError("");
-    const r = await fetch("/api/auth/redeem", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ code: code.trim(), name: name.trim() }),
-    });
-    setBusy(false);
-    if (r.ok) onSignedIn((await r.json()).user);
-    else setError(r.status === 403 ? "رمز الدعوة غير صالح أو استُعمل كله. يبدأ الرمز بـ inv_" : "تعذّر الدخول، حاول مرة أخرى.");
-  };
-  return (
-    <main className="signin">
-      <h1 className="welcome-title">دليل</h1>
-      <p className="welcome-sub">الدخول برمز دعوة.</p>
-      <form className="signin-form" onSubmit={submit}>
-        <label>
-          <span>الاسم</span>
-          <input value={name} onChange={(e) => setName(e.target.value)} required maxLength={200} autoComplete="name" />
-        </label>
-        <label>
-          <span>رمز الدعوة</span>
-          <input
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            required
-            dir="ltr"
-            autoComplete="off"
-            placeholder="inv_…"
-          />
-        </label>
-        {error ? <p className="signin-error">{error}</p> : null}
-        <Button variant="primary" size="medium" type="submit" disabled={busy || !code.trim() || !name.trim()}>
-          {busy ? "جارٍ…" : "دخول"}
-        </Button>
-      </form>
-    </main>
-  );
-}
-
-function Research({ user, onSignOut, onSignedOut }: { user: User; onSignOut: () => void; onSignedOut: () => void }) {
+function Research() {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [drawer, setDrawer] = useState<{ turnId: number; n: number } | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -155,7 +76,6 @@ function Research({ user, onSignOut, onSignedOut }: { user: User; onSignOut: () 
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ question: q, categories: cats }),
         });
-        if (res.status === 401) return onSignedOut();
         if (!res.body) throw new Error(`HTTP ${res.status}`);
         const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
         let buf = "";
@@ -184,7 +104,7 @@ function Research({ user, onSignOut, onSignedOut }: { user: User; onSignOut: () 
             } else if (e.type === "delta") {
               patch(id, (t) => ({ phase: "answering", answer: t.answer + e.text }));
             } else if (e.type === "done") {
-              patch(id, () => ({ phase: "done", model: e.model, cost: e.cost_usd, totalMs: e.latency_ms }));
+              patch(id, () => ({ phase: "done" }));
             } else if (e.type === "error") {
               patch(id, () => ({ phase: "error", error: e.message }));
             }
@@ -195,7 +115,7 @@ function Research({ user, onSignOut, onSignedOut }: { user: User; onSignOut: () 
         patch(id, () => ({ phase: "error", error: String(err) }));
       }
     },
-    [categories, patch, onSignedOut],
+    [categories, patch],
   );
 
   const drawerTurn = drawer ? turns.find((t) => t.id === drawer.turnId) : undefined;
@@ -209,16 +129,15 @@ function Research({ user, onSignOut, onSignedOut }: { user: User; onSignOut: () 
         </button>
         <span className="topbar-sub">بحث موثّق في كتب التراث</span>
         <span className="topbar-spacer" />
-        <span className="topbar-user">{user.name}</span>
-        <button type="button" className="link-btn topbar-out" onClick={onSignOut}>
-          خروج
-        </button>
+        <VisitorName />
       </header>
 
-      <main className="thread">
+      <main className={`thread ${turns.length ? "" : "is-empty"}`}>
         <ServiceNotice />
         {turns.length === 0 ? (
-          <Welcome onAsk={(q) => ask(q)} />
+          <Welcome>
+            <Composer busy={busy} categories={categories} setCategories={setCategories} onAsk={(q) => ask(q)} centered />
+          </Welcome>
         ) : (
           turns.map((t) => (
             <TurnView
@@ -235,7 +154,9 @@ function Research({ user, onSignOut, onSignedOut }: { user: User; onSignOut: () 
         <div ref={endRef} />
       </main>
 
-      <Composer busy={busy} categories={categories} setCategories={setCategories} onAsk={(q) => ask(q)} />
+      {turns.length ? (
+        <Composer busy={busy} categories={categories} setCategories={setCategories} onAsk={(q) => ask(q)} />
+      ) : null}
 
       {drawerPassage && drawerTurn?.retrieval ? (
         <SourceDrawer
@@ -275,17 +196,61 @@ function ServiceNotice() {
   return <div className={`notice ${state === "offline" || state === "failed" ? "is-down" : ""}`}>{text}</div>;
 }
 
-/** Seconds since `from`, updated as it runs. */
-function Elapsed({ from }: { from: number }) {
-  const [now, setNow] = useState(Date.now());
+/**
+ * The name the visitor chooses to give, so the people who run the site know who is
+ * asking. Optional: without it the visitor stays anonymous.
+ */
+function VisitorName() {
+  const [name, setName] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [editing, setEditing] = useState(false);
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 200);
-    return () => clearInterval(t);
+    fetch("/api/visitor")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((v) => setName(v?.name ?? ""), () => setName(""));
   }, []);
-  return <span className="elapsed">{fmtSeconds(now - from)}</span>;
+  if (name === null) return null;
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const r = await fetch("/api/visitor", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: draft.trim() }),
+    });
+    if (r.ok) setName((await r.json()).name);
+    setEditing(false);
+  };
+  if (editing) {
+    return (
+      <form className="visitor-form" onSubmit={save}>
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="اسمك (اختياري)"
+          maxLength={200}
+          autoFocus
+          autoComplete="name"
+        />
+        <button type="submit" className="link-btn">حفظ</button>
+      </form>
+    );
+  }
+  return (
+    <button
+      type="button"
+      className="link-btn visitor-name"
+      title="اختياري: ليعرف القائمون على الموقع من يسأل"
+      onClick={() => {
+        setDraft(name);
+        setEditing(true);
+      }}
+    >
+      {name || "عرّفنا باسمك"}
+    </button>
+  );
 }
 
-function Welcome({ onAsk }: { onAsk: (q: string) => void }) {
+function Welcome({ children }: { children: React.ReactNode }) {
   return (
     <section className="welcome">
       <h1 className="welcome-title">دليل</h1>
@@ -293,14 +258,7 @@ function Welcome({ onAsk }: { onAsk: (q: string) => void }) {
         اسأل بالعربية أو الإنجليزية، وتأتيك الإجابة من نصوص ٥٤٢ كتابًا في القرآن والحديث والتفسير والفقه والعقيدة
         والسيرة، وكل جملة فيها موثّقة بمصدرها.
       </p>
-      <div className="examples">
-        {EXAMPLES.map((e) => (
-          <button key={e.q} type="button" className="example" onClick={() => onAsk(e.q)}>
-            <span className="example-q">{e.q}</span>
-            <span className="example-hint">{e.hint}</span>
-          </button>
-        ))}
-      </div>
+      {children}
     </section>
   );
 }
@@ -309,12 +267,8 @@ function citedNumbers(answer: string): Set<number> {
   const nums = new Set<number>();
   for (const m of answer.matchAll(/\[(\d+)\]/g)) nums.add(Number(m[1]));
   for (const m of answer.matchAll(/Quote\(\s*(\d+)/g)) nums.add(Number(m[1]));
-  for (const m of answer.matchAll(/View\([^\n]*\[([\d,\s]+)\]\)/g))
-    for (const d of m[1].matchAll(/\d+/g)) nums.add(Number(d[0]));
   return nums;
 }
-
-const fmtSeconds = (ms: number) => `${(ms / 1000).toLocaleString("ar-EG", { maximumFractionDigits: 1 })} ث`;
 
 function TurnView({
   turn, activeN, onOpen, onFollowUp, onRated, busy,
@@ -328,7 +282,6 @@ function TurnView({
 }) {
   const passages: Passage[] = turn.retrieval?.passages ?? [];
   const searches = turn.retrieval?.searches ?? [];
-  const lastSearch = searches.at(-1);
   const ctx = useMemo(() => ({ passages, open: onOpen }), [passages, onOpen]);
   const cited = useMemo(() => citedNumbers(turn.answer), [turn.answer]);
   const streaming = turn.phase === "answering";
@@ -344,46 +297,24 @@ function TurnView({
       <h2 className="turn-q" dir="auto">
         {turn.question}
       </h2>
-      <div className="turn-meta">
-        {turn.phase === "searching" || streaming ? (
-          <span className="progress">
-            <span className={turn.phase === "searching" ? "is-now" : "is-done"}>
-              {lastSearch ? `بحث: «${lastSearch.query}»` : "البحث في المصادر"}
-            </span>
-            <span className="progress-sep">←</span>
-            <span className={streaming ? "is-now" : ""}>كتابة الإجابة</span>
-            <Elapsed from={turn.startedAt} />
-          </span>
-        ) : searches.length ? (
-          <>
-            <span>بحث: {searches.map((x) => `«${x.query}»`).join("، ")}</span>
-            <span>·</span>
-            <span>{passages.length.toLocaleString("ar-EG")} مصادر</span>
-            {turn.totalMs ? (
-              <>
-                <span>·</span>
-                <span>{fmtSeconds(turn.totalMs)}</span>
-              </>
-            ) : null}
-            {turn.categories.length ? (
-              <>
-                <span>·</span>
-                <span>{turn.categories.map((c) => CATEGORY_LABELS[c]).join("، ")}</span>
-              </>
-            ) : null}
-          </>
-        ) : null}
-        {searches.some((x) => x.status.retrieval?.startsWith("bm25_fallback")) ? (
-          <span className="meta-warn">بحث لفظي فقط: تعذّر البحث بالمعنى</span>
-        ) : null}
-      </div>
+      {turn.phase === "searching" || streaming ? (
+        <Progress turn={turn} />
+      ) : (
+        <div className="turn-meta">
+          {passages.length ? <span>{passages.length.toLocaleString("ar-EG")} مصادر</span> : null}
+          {turn.categories.length ? (
+            <>
+              <span>·</span>
+              <span>{turn.categories.map((c) => CATEGORY_LABELS[c]).join("، ")}</span>
+            </>
+          ) : null}
+          {searches.some((x) => x.status.retrieval?.startsWith("bm25_fallback")) ? (
+            <span className="meta-warn">تعذّر البحث الكامل هذه المرة، فقد تفوت الإجابة بعض النصوص</span>
+          ) : null}
+        </div>
+      )}
 
       <PassagesContext.Provider value={ctx}>
-        {turn.phase === "searching" || (streaming && !turn.answer) ? (
-          <div className="answer-skeleton">
-            <Skeleton count={3} height="14px" />
-          </div>
-        ) : null}
         {turn.answer ? (
           <div className="answer">
             <Renderer
@@ -402,6 +333,37 @@ function TurnView({
         <TurnFooter turn={turn} queryId={turn.retrieval.query_id} onRated={onRated} />
       ) : null}
     </section>
+  );
+}
+
+/** Wording for each stage of an answer; within a stage it moves on every few seconds. */
+const STAGES = {
+  reading: ["أقرأ سؤالك", "أبحث في الكتب", "أقلّب الصفحات"],
+  searched: (query: string) => [`أبحث عن «${query}»`, "أقرأ النصوص", "أجمع أقوال العلماء", "أرتّب الأدلة"],
+  writing: ["أكتب الإجابة"],
+};
+const STAGE_STEP_MS = 2600;
+
+/** A line that changes as the answer moves on: reading, searching, reading the texts, writing. */
+function Progress({ turn }: { turn: Turn }) {
+  const searches = turn.retrieval?.searches ?? [];
+  const writing = turn.phase === "answering" && /(^|\n)\s*root\s*=/.test(turn.answer);
+  const stage = writing ? "writing" : searches.length ? `searched-${searches.length}` : "reading";
+  const lines = writing ? STAGES.writing
+    : searches.length ? STAGES.searched(searches[searches.length - 1].query)
+    : STAGES.reading;
+  const [step, setStep] = useState(0);
+  useEffect(() => {
+    setStep(0);
+    const t = setInterval(() => setStep((n) => n + 1), STAGE_STEP_MS);
+    return () => clearInterval(t);
+  }, [stage]);
+  const text = lines[Math.min(step, lines.length - 1)];
+  return (
+    <div className="progress" role="status" aria-live="polite">
+      <span className="progress-mark" aria-hidden />
+      <span key={text} className="progress-text">{text}…</span>
+    </div>
   );
 }
 
@@ -436,22 +398,19 @@ function TurnFooter({ turn, queryId, onRated }: { turn: Turn; queryId: number; o
           </button>
         ))}
       </div>
-      <span className="turn-cost" dir="ltr">
-        {turn.model}
-        {turn.cost != null ? ` · $${turn.cost.toFixed(3)}` : ""}
-        {turn.totalMs ? ` · ${(turn.totalMs / 1000).toFixed(1)}s` : ""}
-      </span>
     </footer>
   );
 }
 
 function Composer({
-  busy, categories, setCategories, onAsk,
+  busy, categories, setCategories, onAsk, centered = false,
 }: {
   busy: boolean;
   categories: Category[];
   setCategories: (c: Category[]) => void;
   onAsk: (q: string) => void;
+  /** In the middle of the start page instead of fixed at the bottom. */
+  centered?: boolean;
 }) {
   const [text, setText] = useState("");
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -470,10 +429,11 @@ function Composer({
     setCategories(categories.includes(c) ? categories.filter((x) => x !== c) : [...categories, c]);
 
   return (
-    <div className="composer-wrap">
+    <div className={`composer-wrap ${centered ? "is-centered" : ""}`}>
       <div className="composer">
         <textarea
           ref={ref}
+          autoFocus={centered}
           dir="auto"
           rows={1}
           value={text}

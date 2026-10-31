@@ -1,4 +1,4 @@
-"""dalil API: search, cited answers, and expert feedback.
+"""dalil API: search, cited answers and feedback, open to every visitor.
 
     uvicorn dalil_api.main:app --host 0.0.0.0 --port $PORT
 """
@@ -18,7 +18,8 @@ from sqlalchemy import select
 
 from . import answer as answering
 from . import auth, store
-from .auth import AdminOnly, CurrentUser
+from .auth import AdminOnly, CurrentUser, KnownUser
+from .country import Country
 from .config import Settings
 from .search import SearchService, compact_result
 
@@ -65,16 +66,8 @@ class AskBody(BaseModel):
     rerank: bool = False
 
 
-class RedeemBody(BaseModel):
-    code: str
-    name: str = Field(min_length=1, max_length=200)
-    email: str | None = Field(None, max_length=320)
-
-
-class InviteBody(BaseModel):
-    label: str = Field("", max_length=200)
-    role: Literal["expert", "admin"] = "expert"
-    max_uses: int = Field(1, ge=1, le=1000)
+class VisitorBody(BaseModel):
+    name: str = Field("", max_length=200)
 
 
 class PassageJudgment(BaseModel):
@@ -104,8 +97,6 @@ def _require_ready(request: Request) -> SearchService:
 def _check_quota(request: Request, user: dict[str, Any], kind: str) -> None:
     s: Settings = request.app.state.settings
     db = request.app.state.db
-    if user["role"] == "admin":
-        return
     per_user = s.user_daily_asks if kind == "ask" else s.user_daily_searches
     if store.count_today(db, kind, user["id"]) >= per_user:
         raise HTTPException(429, f"Daily limit of {per_user} {kind}s reached; it resets at 00:00 UTC")
@@ -128,12 +119,12 @@ def _run_search(search: SearchService, question: str, *, n_results: int, categor
 
 
 def _log_query(db, *, user_id: int, kind: str, question: str, params: dict, status: dict,
-               results: list[dict], latency_ms: int, error: str | None = None) -> int:
+               results: list[dict], latency_ms: int, country: str | None, error: str | None = None) -> int:
     with db.begin() as conn:
         return conn.execute(store.queries.insert().values(
             user_id=user_id, kind=kind, question=question, params=params, status=status,
             results=[{"parent_id": r["parent_id"], "citation": r["citation"]} for r in results],
-            latency_ms=latency_ms, error=error,
+            latency_ms=latency_ms, error=error, country=country,
         )).inserted_primary_key[0]
 
 
@@ -149,7 +140,7 @@ def _finish_query(db, query_id: int, started: float, error: str | None, **values
 
 def _searches_left(request: Request, user: dict[str, Any]) -> bool:
     s: Settings = request.app.state.settings
-    return user["role"] == "admin" or store.count_today(request.app.state.db, "search", user["id"]) < s.user_daily_searches
+    return store.count_today(request.app.state.db, "search", user["id"]) < s.user_daily_searches
 
 
 # ── routes ──────────────────────────────────────────────────────────────────────
@@ -173,22 +164,25 @@ def _routes(app: FastAPI) -> None:
                       "spend_usd": round(store.spend_today(db), 4), "spend_cap_usd": s.daily_spend_cap_usd},
         }
 
-    @app.post("/admin/invites", dependencies=[AdminOnly])
-    def create_invite(body: InviteBody, request: Request) -> dict[str, Any]:
-        code = auth.create_invite(request.app.state.db, body.label, body.role, body.max_uses)
-        return {"code": code, "label": body.label, "role": body.role, "max_uses": body.max_uses}
+    @app.get("/admin/visitors", dependencies=[AdminOnly])
+    def visitors(request: Request) -> dict[str, Any]:
+        """Who uses the site: each visitor's name if they gave one, questions, searches and
+        countries; and each country with its visitors and questions."""
+        return store.visitors(request.app.state.db)
 
-    @app.post("/auth/redeem")
-    def redeem(body: RedeemBody, request: Request) -> dict[str, Any]:
-        user, token = auth.redeem_invite(request.app.state.db, body.code, body.name, body.email)
-        return {"token": token, "user": {"id": user["id"], "name": user["name"], "role": user["role"]}}
+    @app.get("/visitor")
+    def visitor(user: dict | None = KnownUser) -> dict[str, Any]:
+        return {"id": user["id"], "name": user["name"]} if user else {"id": None, "name": ""}
 
-    @app.get("/me")
-    def me(user: dict = CurrentUser) -> dict[str, Any]:
-        return {"id": user["id"], "name": user["name"], "role": user["role"]}
+    @app.post("/visitor")
+    def name_visitor(body: VisitorBody, request: Request, user: dict = CurrentUser) -> dict[str, Any]:
+        """The name the visitor chooses to give; empty to take it back."""
+        auth.set_name(request.app.state.db, user["id"], body.name.strip())
+        return {"id": user["id"], "name": body.name.strip()}
 
     @app.post("/search")
-    def search_route(body: SearchBody, request: Request, user: dict = CurrentUser) -> dict[str, Any]:
+    def search_route(body: SearchBody, request: Request, user: dict = CurrentUser,
+                     country: str | None = Country) -> dict[str, Any]:
         search = _require_ready(request)
         _check_quota(request, user, "search")
         started = time.time()
@@ -200,12 +194,13 @@ def _routes(app: FastAPI) -> None:
         status = payload.get("status", {})
         query_id = _log_query(request.app.state.db, user_id=user["id"], kind="search", question=body.question,
                               params=body.model_dump(exclude={"question"}), status=status,
-                              results=results, latency_ms=latency, error=payload.get("error"))
+                              results=results, latency_ms=latency, country=country, error=payload.get("error"))
         return {"query_id": query_id, "status": status, "results": results, "latency_ms": latency,
                 "error": payload.get("error")}
 
     @app.post("/ask")
-    def ask(body: AskBody, request: Request, user: dict = CurrentUser) -> StreamingResponse:
+    def ask(body: AskBody, request: Request, user: dict = CurrentUser,
+            country: str | None = Country) -> StreamingResponse:
         """The answer as NDJSON events: ``start`` (the query id), one ``search`` per
         search the answer model runs (its query and the new numbered passages),
         ``delta`` (OpenUI Lang text; ``reset`` discards text streamed so far), then
@@ -227,13 +222,13 @@ def _routes(app: FastAPI) -> None:
             status = payload.get("status", {})
             _log_query(db, user_id=user["id"], kind="search", question=query, params={**params, "ask_id": query_id},
                        status=status, results=results, latency_ms=int((time.time() - started) * 1000),
-                       error=payload.get("error"))
+                       country=country, error=payload.get("error"))
             statuses.append({"query": query, **status})
             return results
 
         statuses: list[dict[str, Any]] = []
         query_id = _log_query(db, user_id=user["id"], kind="ask", question=body.question, params=params,
-                              status={}, results=[], latency_ms=0)
+                              status={}, results=[], latency_ms=0, country=country)
 
         def events():
             started = time.time()
@@ -277,7 +272,7 @@ def _routes(app: FastAPI) -> None:
     def get_query(query_id: int, request: Request, user: dict = CurrentUser) -> dict[str, Any]:
         with request.app.state.db.connect() as conn:
             q = conn.execute(select(store.queries).where(store.queries.c.id == query_id)).mappings().first()
-            if q is None or (q["user_id"] != user["id"] and user["role"] != "admin"):
+            if q is None or q["user_id"] != user["id"]:
                 raise HTTPException(404, "Not found")
             a = conn.execute(select(store.answers).where(store.answers.c.query_id == query_id)).mappings().first()
             fb = conn.execute(select(store.feedback).where(store.feedback.c.query_id == query_id)
@@ -289,7 +284,7 @@ def _routes(app: FastAPI) -> None:
         db = request.app.state.db
         with db.begin() as conn:
             q = conn.execute(select(store.queries.c.user_id).where(store.queries.c.id == body.query_id)).first()
-            if q is None or (q.user_id != user["id"] and user["role"] != "admin"):
+            if q is None or q.user_id != user["id"]:
                 raise HTTPException(404, "Unknown query_id")
             feedback_id = conn.execute(store.feedback.insert().values(
                 query_id=body.query_id, user_id=user["id"], rating=body.rating, comment=body.comment,

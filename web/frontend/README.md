@@ -1,8 +1,9 @@
 # dalil frontend
 
-Next.js app over the dalil API. Visitors sign in with an invite code; a question goes
-to the API's streaming `/ask`, where the answer model searches (each search and its
-passages appear as they run) and the answer streams as
+Next.js app over the dalil API, open to everyone. Each browser gets a random visitor id in
+an httpOnly cookie, and a visitor may give a name. A question goes to the API's streaming
+`/ask`, where the answer model searches (a line under the question says what it is doing, and
+the passages appear as they arrive) and the answer streams as
 [OpenUI Lang](https://openui.com/docs/openui-lang) into the components in
 `lib/library.tsx`.
 
@@ -13,8 +14,7 @@ passages appear as they run) and the answer streams as
   results (`lib/passages.tsx`), never from the model.
 - `Quote` matches the model's words against passage n (`lib/arabic.ts`: diacritics,
   alef forms and punctuation ignored) and shows the passage's own text with the
-  model's **bold** placed on it, marked "مطابق للمصدر", or a warning when the words
-  are not in the passage.
+  model's **bold** placed on it.
 - `npm run prompt` writes the component instructions for the answer model to
   `web/backend/dalil_api/answer_components.md` (`scripts/gen_prompt.tsx`). Run it after
   changing a component's name, props or description.
@@ -22,23 +22,24 @@ passages appear as they run) and the answer streams as
 ## Run
 
 ```bash
-cp .env.example .env.local     # DALIL_API_URL
+cp .env.example .env.local     # DALIL_API_URL, SITE_TOKEN
 npm install                    # .npmrc skips install scripts (OpenUI's telemetry postinstall)
 npm run dev                    # http://localhost:3300
 ```
 
-The API must be running (`../backend/README.md`); an admin mints invite codes with
-`POST /admin/invites`.
+The API must be running (`../backend/README.md`) with the same `SITE_TOKEN`. The site sends
+the API the country its host reports (`x-vercel-ip-country`, `cf-ipcountry`), or else the
+visitor's IP for the API's offline lookup.
 
 ## Layout
 
 | | |
 |---|---|
-| `app/api/ask` | the API's `/ask` stream, as the signed-in visitor |
-| `app/api/auth/*` | redeem an invite (the token is kept in an httpOnly cookie), current user, sign out |
+| `app/api/ask` | the API's `/ask` stream, for this visitor |
+| `app/api/visitor` | the visitor's name |
 | `app/api/feedback`, `app/api/health` | the API's `/feedback` and `/health` |
 | `lib/library.tsx` | the OpenUI library: Answer, Lead, Prose, Quote, Views, Steps, Table, Gap, Referral, FollowUpBlock |
-| `components/` | `dalil.tsx` (sign-in and page), `cited_text.tsx`, `source_list.tsx`, `source_drawer.tsx` (the passage, with relevance feedback) |
+| `components/` | `dalil.tsx` (the page), `cited_text.tsx`, `source_list.tsx`, `source_drawer.tsx` (the passage, with relevance feedback) |
 
 ## OpenUI
 

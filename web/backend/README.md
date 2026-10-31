@@ -1,27 +1,37 @@
 # dalil API
 
-FastAPI service over `dalil.s8_search`: search, cited answers and expert feedback.
-Invite-only, with per-user and global daily caps.
+FastAPI service over `dalil.s8_search`: search, cited answers and feedback. Open to every
+visitor of the web app, with per-visitor and global daily caps.
+
+## Visitors
+
+There is no sign-in. The web app's server calls the API with `SITE_TOKEN` and the browser's
+visitor id, a random value it keeps in a cookie; the API stores only its SHA-256 hash, and a
+visitor exists from their first question, search or name. A visitor may give a name
+(`POST /visitor`). Each question keeps the two-letter country it came from: the country the
+host reports (Vercel, Cloudflare), or else the visitor's IP looked up in DB-IP's offline
+country database (`GEOIP_DB`). No IP is stored or logged. `GET /admin/visitors` lists every
+visitor with their name, questions, searches and countries, and every country with its
+visitors and questions.
 
 ## Endpoints
 
 | | |
 |---|---|
 | `GET /health` | liveness; `search` is `downloading`, `building`, `loading`, `ready` or `failed` |
-| `POST /admin/invites` | admin: mint an invite code `{label, role, max_uses}` |
-| `POST /auth/redeem` | `{code, name, email?}` -> bearer token |
-| `GET /me` | the token's user |
+| `GET /visitor`, `POST /visitor` | the visitor's name; `{name}` sets it, `""` takes it back |
 | `POST /search` | `{question, n_results, categories?, query_planning, rerank, expand_neighbours}` |
 | `POST /ask` | `{question, categories?}` -> the answer as NDJSON events, below |
 | `POST /feedback` | `{query_id, rating, comment, corrected_answer, passages:[{parent_id, relevance, citation_ok}], missing_sources}` |
 | `GET /queries/{id}` | a query with its answer and feedback |
 | `GET /status`, `GET /admin/export` | admin: load state, today's use; queries + answers + feedback for evals |
+| `GET /admin/visitors` | admin: who asks, and from which countries |
 
 `/ask` streams one JSON object per line: `start` (the query id), one `search` per search the
 answer model runs (its query, the new numbered passages and what the engine ran), `delta`
 events with the answer's text (`reset` discards text streamed before a search), then `done`
 (`model`, `cost_usd`, `latency_ms`) or `error`. The answer model searches with a `search`
-tool, at most 3 times per question, and each search counts against the user's daily
+tool, at most 3 times per question, and each search counts against the visitor's daily
 searches. The question, every passage shown and the answer are stored, with the model, token
 counts, reported cost and a hash of the system prompt.
 
@@ -46,6 +56,8 @@ Every search and answer reports what actually ran in `status`: `retrieval`
 | `ANSWER_MAX_TOKENS`, `ANSWER_PASSAGES`, `PASSAGE_MAX_CHARS` | 6000; passages per search, 8; characters per passage, 3000 |
 | `ANSWER_PROMPT_PATH` | the answering prompt; default `prompts/answering_system_prompt.md` at the repository root, or the copy in `vendor/` |
 | `ADMIN_TOKEN` | bearer token for the admin routes |
+| `SITE_TOKEN` | bearer token the web app's server sends with every visitor's call; the same value as the web app's `SITE_TOKEN` |
+| `GEOIP_DB` | DB-IP country database (`.mmdb`) for questions whose host sends no country; the Docker image downloads it with `scripts/download_country_db.py`. [IP Geolocation by DB-IP](https://db-ip.com), CC BY 4.0 |
 | `DATABASE_URL` | Postgres (Railway sets it); SQLite under the data dir when unset |
 | `DALIL_DATA_DIR` | `/data` (the volume); stores live in `/data/db` |
 | `DALIL_DENSE_COMPACT_DIMS` | unset: exact dense search; `1024`: the compact mode in the main README |
