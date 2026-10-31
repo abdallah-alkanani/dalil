@@ -10,7 +10,6 @@ from fastapi.testclient import TestClient
 
 from dalil_api import answer as answering
 from dalil_api import country
-from dalil_api.answer_test import scripted
 from dalil_api.config import Settings
 from dalil_api.main import create_app
 
@@ -43,7 +42,7 @@ class FakeSearch:
 @pytest.fixture()
 def client(tmp_path):
     settings = Settings(data_dir=tmp_path, database_url=f"sqlite:///{tmp_path}/t.sqlite",
-                        admin_token="admin-secret", site_token="site-secret", openrouter_api_key="k", answer_api_key="k", user_daily_asks=2,
+                        admin_token="admin-secret", site_token="site-secret", openrouter_api_key="k", answer_api_key="k", global_daily_asks=2,
                         daily_spend_cap_usd=1.0)
     search = FakeSearch()
     with TestClient(create_app(settings, search)) as c:
@@ -156,25 +155,31 @@ def test_feedback_only_on_own_queries(client):
     assert client.post("/feedback", headers=a, json=fb).status_code == 200
 
 
-def test_ask_limits(client):
+def test_one_visitor_has_no_limit_of_their_own(client):
+    client.app.state.settings.global_daily_asks = 10
+    client.app.state.settings.daily_spend_cap_usd = 100.0
     h = visitor(client)
     with mock.patch.object(answering, "run", side_effect=fake_run):
-        assert ask(client, h, "س1")[0].status_code == 200
+        assert [ask(client, h, f"س{i}")[0].status_code for i in range(5)] == [200] * 5
+
+
+def test_the_daily_question_cap_counts_everyone(client):
+    with mock.patch.object(answering, "run", side_effect=fake_run):
+        assert ask(client, visitor(client), "س1")[0].status_code == 200
+        assert ask(client, visitor(client), "س2")[0].status_code == 200
+        r, _ = ask(client, visitor(client), "س3")
+    assert r.status_code == 429 and "question limit" in r.json()["detail"]
+
+
+def test_the_spend_cap(client):
+    client.app.state.settings.global_daily_asks = 10
+    h = visitor(client)
+    with mock.patch.object(answering, "run", side_effect=fake_run):
         # 0.6 + 0.6 crosses the 1.0 spend cap
+        assert ask(client, h, "س1")[0].status_code == 200
         assert ask(client, h, "س2")[0].status_code == 200
         r, _ = ask(client, h, "س3")
-    assert r.status_code == 429
-
-
-def test_searches_count_against_the_daily_limit(client):
-    client.app.state.settings.user_daily_searches = 1
-    h = visitor(client)
-    stream = scripted(("", ["أ", "ب"], "tool_calls"), ("root = Answer([])", [], "stop"))
-    with mock.patch.object(answering._Call, "stream", stream):
-        _, events = ask(client, h, "سؤال")
-    assert [e["type"] for e in events] == ["start", "search", "delta", "done"]
-    tool_results = [m["content"] for m in stream.bodies[1]["messages"] if m["role"] == "tool"]
-    assert "انتهى عدد مرات البحث" in tool_results[1]
+    assert r.status_code == 429 and "spending" in r.json()["detail"]
 
 
 def test_answer_failure_is_logged_and_reported(client):

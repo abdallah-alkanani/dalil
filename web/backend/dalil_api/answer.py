@@ -44,10 +44,6 @@ class AnswerError(RuntimeError):
     pass
 
 
-class SearchLimit(RuntimeError):
-    """The user has no searches left today; the message is shown to the model."""
-
-
 @lru_cache(maxsize=4)
 def system_prompt(prompt_path: Path) -> tuple[str, str]:
     """(prompt, version): the version is a hash of the prompt text, stored with each answer."""
@@ -127,8 +123,6 @@ def run(question: str, search: Callable[[str], list[dict[str, Any]]], *, prompt_
                     if query:
                         try:
                             found = search(query)
-                        except SearchLimit as exc:
-                            result, searches = str(exc), max_searches
                         except Exception as exc:  # the model reads the failure and may search again
                             log.warning("search failed: %s", exc)
                             result, searches = f"تعذّر البحث: {exc}", searches + 1

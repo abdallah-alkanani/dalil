@@ -1,7 +1,7 @@
 # dalil API
 
 FastAPI service over `dalil.s8_search`: search, cited answers and feedback. Open to every
-visitor of the web app, with per-visitor and global daily caps.
+visitor of the web app. The daily caps are for the whole site, not per visitor.
 
 ## Visitors
 
@@ -64,7 +64,7 @@ Every search and answer reports what actually ran in `status`: `retrieval`
 | `DALIL_DENSE_RESCORE` | rows the compact mode rescores exactly (default 1000) |
 | `DALIL_PLANNER_MODEL`, `DALIL_LISTWISE_MODEL` | see the main README |
 | `HF_DATA_REPO`, `HF_TOKEN`, `HF_DATA_PREFIX`, `HF_DATA_REVISION`, `HF_REPO_TYPE` | where missing stores are downloaded from on boot; `HF_REPO_TYPE` defaults to `dataset` |
-| `USER_DAILY_ASKS`, `USER_DAILY_SEARCHES`, `GLOBAL_DAILY_ASKS`, `DAILY_SPEND_CAP_USD` | 30, 300, 500, 10; ollama.com reports no cost, so with the default endpoint `DAILY_SPEND_CAP_USD` never triggers |
+| `GLOBAL_DAILY_ASKS`, `DAILY_SPEND_CAP_USD` | questions per UTC day for everyone together, 1000; reported answer cost per UTC day, 10; ollama.com reports no cost, so with the default endpoint `DAILY_SPEND_CAP_USD` never triggers |
 | `CORS_ORIGINS` | comma-separated origins allowed to call the API from a browser |
 
 Stores in `/data/db`: `faiss_metadata.sqlite`, `parents.sqlite`, `bm25.sqlite` and

@@ -95,17 +95,14 @@ def _require_ready(request: Request) -> SearchService:
     return search
 
 
-def _check_quota(request: Request, user: dict[str, Any], kind: str) -> None:
+def _check_daily_caps(request: Request) -> None:
+    """The site's caps on answers, shared by every visitor."""
     s: Settings = request.app.state.settings
     db = request.app.state.db
-    per_user = s.user_daily_asks if kind == "ask" else s.user_daily_searches
-    if store.count_today(db, kind, user["id"]) >= per_user:
-        raise HTTPException(429, f"Daily limit of {per_user} {kind}s reached; it resets at 00:00 UTC")
-    if kind == "ask":
-        if store.count_today(db, "ask") >= s.global_daily_asks:
-            raise HTTPException(429, "Today's question limit has been reached; it resets at 00:00 UTC")
-        if store.spend_today(db) >= s.daily_spend_cap_usd:
-            raise HTTPException(429, "Today's spending limit has been reached; it resets at 00:00 UTC")
+    if store.count_today(db, "ask") >= s.global_daily_asks:
+        raise HTTPException(429, "Today's question limit has been reached; it resets at 00:00 UTC")
+    if store.spend_today(db) >= s.daily_spend_cap_usd:
+        raise HTTPException(429, "Today's spending limit has been reached; it resets at 00:00 UTC")
 
 
 def _run_search(search: SearchService, question: str, *, n_results: int, categories, query_planning: str,
@@ -137,11 +134,6 @@ def _finish_query(db, query_id: int, started: float, error: str | None, **values
     with db.begin() as conn:
         conn.execute(store.queries.update().where(store.queries.c.id == query_id).values(
             latency_ms=int((time.time() - started) * 1000), error=error, **values))
-
-
-def _searches_left(request: Request, user: dict[str, Any]) -> bool:
-    s: Settings = request.app.state.settings
-    return store.count_today(request.app.state.db, "search", user["id"]) < s.user_daily_searches
 
 
 # ── routes ──────────────────────────────────────────────────────────────────────
@@ -185,7 +177,6 @@ def _routes(app: FastAPI) -> None:
     def search_route(body: SearchBody, request: Request, user: dict = CurrentUser,
                      country: str | None = Country) -> dict[str, Any]:
         search = _require_ready(request)
-        _check_quota(request, user, "search")
         started = time.time()
         payload, results = _run_search(
             search, body.question, n_results=body.n_results, categories=body.categories,
@@ -205,17 +196,15 @@ def _routes(app: FastAPI) -> None:
         """The answer as NDJSON events: ``start`` (the query id), one ``search`` per
         search the answer model runs (its query and the new numbered passages),
         ``delta`` (OpenUI Lang text; ``reset`` discards text streamed so far), then
-        ``done`` or ``error``. Each search counts against the user's daily searches;
-        the question, the passages and the answer are logged."""
+        ``done`` or ``error``. The question, each search, the passages and the answer
+        are logged; the site's daily caps apply."""
         s: Settings = request.app.state.settings
         db = request.app.state.db
         search = _require_ready(request)
-        _check_quota(request, user, "ask")
+        _check_daily_caps(request)
         params = body.model_dump(exclude={"question"})
 
         def run_search(query: str) -> list[dict[str, Any]]:
-            if not _searches_left(request, user):
-                raise answering.SearchLimit(f"انتهى عدد مرات البحث اليوم ({s.user_daily_searches}). أجب من النصوص التي وصلتك.")
             started = time.time()
             payload, results = _run_search(
                 search, query, n_results=s.answer_passages, categories=body.categories, query_planning="off",

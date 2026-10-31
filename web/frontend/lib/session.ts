@@ -1,7 +1,7 @@
 /**
  * The site is open to everyone, with no sign-in. Each browser gets a random visitor
  * id in an httpOnly cookie, and every API call carries it with SITE_TOKEN, so the
- * API can tell visitors apart and apply its per-visitor caps. The call also carries
+ * API can tell visitors apart. The call also carries
  * the country the host reports or, without one, the visitor's IP, which the API turns
  * into a country and does not keep.
  */

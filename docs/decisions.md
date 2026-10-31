@@ -78,12 +78,12 @@ Each decision names the code that implements it.
 
 - **One answer path.** The website asks the API's `/ask`, which streams the answer and stores
   the question, the passages, the answer, the model, its token counts and reported cost, and a
-  hash of the system prompt. The per-user and global daily caps apply there
+  hash of the system prompt. The site's daily caps apply there
   (`web/backend/dalil_api/main.py`).
 - **The answer model runs the search.** `prompts/answering_system_prompt.md` is written for a
   model that searches first and searches again when a search misses, so on the website the
   model gets a `search` tool, at most 3 calls per question; passage numbers continue across
-  searches, and each search counts against the user's daily searches
+  searches, and each search is logged
   (`web/backend/dalil_api/answer.py`).
 - **The system prompt** is the repository's answering prompt followed by the OpenUI component
   instructions, generated from the frontend's component library (`npm run prompt` writes
@@ -99,8 +99,10 @@ Each decision names the code that implements it.
   question keeps the two-letter country it came from: the host's country header, or else the IP
   looked up in DB-IP's offline country database. No IP is stored or logged
   (`web/backend/dalil_api/auth.py`, `country.py`).
-- **Only the site calls the API.** The site's server sends `SITE_TOKEN` with every call, so the
-  per-visitor caps cannot be dodged by calling the API directly with made-up visitors.
+- **Only the site calls the API.** The site's server sends `SITE_TOKEN` with every call, so
+  nobody can call the API directly or pose as other visitors.
+- **One cap for the whole site, none per visitor.** At most 1,000 questions a day for everyone
+  together (`GLOBAL_DAILY_ASKS`), and the daily spend cap; a visitor has no limit of their own.
 - **A visitor exists once they act.** Opening the page creates no visitor; the first question,
   search or name does.
 

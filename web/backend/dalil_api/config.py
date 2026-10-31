@@ -70,11 +70,9 @@ class Settings:
     answer_prompt_path: Path = field(default_factory=lambda: Path(
         os.environ.get("ANSWER_PROMPT_PATH", "") or _default_prompt_path()))
 
-    # Caps. A user's asks per UTC day, everyone's asks per UTC day, and the
-    # reported model cost per UTC day after which /ask refuses until midnight UTC.
-    user_daily_asks: int = field(default_factory=lambda: _int("USER_DAILY_ASKS", 30))
-    user_daily_searches: int = field(default_factory=lambda: _int("USER_DAILY_SEARCHES", 300))
-    global_daily_asks: int = field(default_factory=lambda: _int("GLOBAL_DAILY_ASKS", 500))
+    # Caps on the whole site, not per visitor: everyone's asks per UTC day, and the
+    # reported model cost per UTC day, after which /ask refuses until midnight UTC.
+    global_daily_asks: int = field(default_factory=lambda: _int("GLOBAL_DAILY_ASKS", 1000))
     daily_spend_cap_usd: float = field(default_factory=lambda: _float("DAILY_SPEND_CAP_USD", 10.0))
 
     # Where the stores come from on first boot, when the volume is empty.

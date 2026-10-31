@@ -75,14 +75,6 @@ def test_run_stops_offering_the_tool_after_the_last_search():
     assert "tools" in stream.bodies[1] and "tools" not in stream.bodies[2]
 
 
-def test_run_tells_the_model_when_searches_are_used_up():
-    def no_more(q):
-        raise answering.SearchLimit("no searches left")
-    stream = scripted(("", ["أ"], "tool_calls"), ("root = Answer([])", [], "stop"))
-    run(stream, no_more)
-    assert stream.bodies[1]["messages"][-1]["content"] == "no searches left" and "tools" not in stream.bodies[1]
-
-
 def test_run_tells_the_model_when_a_search_fails():
     def broken(q):
         raise RuntimeError("index unavailable")
