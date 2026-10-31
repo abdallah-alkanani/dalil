@@ -35,6 +35,7 @@ def create_app(settings: Settings | None = None, search: SearchService | None = 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.settings = settings
+        settings.data_dir.mkdir(parents=True, exist_ok=True)  # the SQLite log lives here without DATABASE_URL
         app.state.db = store.connect(settings.database_url)
         app.state.search = search or SearchService(settings)
         if app.state.search.state == "starting":

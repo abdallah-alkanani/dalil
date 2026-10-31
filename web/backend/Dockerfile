@@ -24,4 +24,5 @@ ENV GEOIP_DB=/opt/geo/country.mmdb
 
 COPY web/backend/dalil_api/ dalil_api/
 
-CMD ["sh", "-c", "uvicorn dalil_api.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]
+# exec, so uvicorn is PID 1 and gets the platform's SIGTERM; sh would not pass it on.
+CMD ["sh", "-c", "exec uvicorn dalil_api.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]
