@@ -6,6 +6,11 @@ fiqh, aqeedah and seerah. Ask a question and it returns the passages that addres
 it, each with its scholar, book and place, ready to hand to a language model as
 cited evidence.
 
+**Try it on the web: [dalil](https://nonmoral-allen-nonknowledgeable.ngrok-free.dev/).** Ask in
+Arabic or English. The answer model searches the books itself, in Arabic, then answers in
+the scholars' own words: every statement names its scholar and book, every quote is pasted
+from its passage, and every passage opens in full. No sign-in.
+
 Everything it searches is ready to download from
 [Hugging Face](https://huggingface.co/datasets/Alkanani/dalil): the books in their
 original and cleaned form, the search databases, and 927,744 precomputed
