@@ -54,9 +54,12 @@ button { font: inherit; color: inherit; }
 .wordmark {
   font-family: var(--font-naskh), serif; font-size: 28px; font-weight: 700; line-height: 1;
   color: var(--accent); background: none; border: 0; padding: 0 0 4px; cursor: pointer;
+  text-decoration: none;
 }
 .topbar-sub { color: var(--ink-3); font-size: 14px; }
 .topbar-spacer { flex: 1; }
+.topbar-about { color: var(--ink-2); font-size: 13px; text-decoration: none; }
+.topbar-about:hover { color: var(--accent); }
 
 .thread { max-width: 780px; margin: 0 auto; padding: 36px 24px 260px; }
 .thread.is-empty { padding-bottom: 36px; }
@@ -85,6 +88,37 @@ button { font: inherit; color: inherit; }
   font-size: 72px; line-height: 1.2; margin: 0; color: var(--accent);
 }
 .welcome-sub { max-width: 520px; margin: 14px auto 32px; color: var(--ink-2); font-size: 17px; }
+
+/* ── about ─────────────────────────────────────────────────────────────── */
+
+.about { max-width: 700px; margin: 0 auto; padding: 56px 24px 96px; }
+.about-kicker { margin: 0 0 6px; color: var(--gold); font-size: 13px; font-weight: 600; letter-spacing: 0.04em; }
+.about-title {
+  font-family: var(--font-naskh), serif; font-size: 52px; line-height: 1.2;
+  margin: 0 0 18px; color: var(--accent);
+}
+.about-lead { margin: 0 0 16px; font-size: 19px; line-height: 1.9; color: var(--ink); }
+.about-body { margin: 0 0 32px; font-size: 16.5px; line-height: 1.9; color: var(--ink-2); }
+.about-links { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.about-link {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 18px 20px; text-decoration: none; color: var(--ink);
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+.about-link:hover { border-color: var(--accent); box-shadow: var(--shadow); transform: translateY(-1px); }
+.about-link-label { color: var(--accent); font-size: 13px; font-weight: 600; }
+.about-link-title { font-size: 15.5px; }
+.about-link-url { color: var(--ink-3); font-size: 13px; text-align: end; }
+.about-note { margin: 32px 0 28px; font-size: 14.5px; color: var(--ink-3); }
+.about-start {
+  display: inline-block; padding: 10px 22px; border-radius: 999px;
+  background: var(--accent); color: #fff; font-size: 15px; text-decoration: none;
+}
+.about-start:hover { background: var(--accent-hover); }
+.about-link:focus-visible, .about-start:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 3px;
+}
 
 /* ── a turn ────────────────────────────────────────────────────────────── */
 
@@ -315,6 +349,12 @@ button { font: inherit; color: inherit; }
   .welcome { min-height: calc(100svh - 52px - 40px); padding-bottom: 6vh; }
   .welcome-title { font-size: 52px; }
   .welcome-sub { font-size: 15.5px; margin: 8px auto 24px; }
+
+  .about { padding: 32px 18px 72px; }
+  .about-title { font-size: 40px; }
+  .about-lead { font-size: 17px; }
+  .about-body { font-size: 15.5px; }
+  .about-links { grid-template-columns: 1fr; }
 
   .turn-q { font-size: 21px; }
   .turn-meta { margin-bottom: 16px; }
