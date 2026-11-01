@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from contextlib import asynccontextmanager
 from typing import Any, Literal
@@ -35,8 +36,14 @@ def create_app(settings: Settings | None = None, search: SearchService | None = 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.settings = settings
-        settings.data_dir.mkdir(parents=True, exist_ok=True)  # the SQLite log lives here without DATABASE_URL
-        app.state.db = store.connect(settings.database_url)
+        # The data directory is never created here: when it is missing, the volume is
+        # not mounted, and /health says so (search.py). The app's own database may
+        # live there too (SQLite without DATABASE_URL); the API still starts without it.
+        try:
+            app.state.db, app.state.db_error = store.connect(settings.database_url), ""
+        except Exception as exc:
+            log.error("app database unavailable at %s: %s", _redact(settings.database_url), exc)
+            app.state.db, app.state.db_error = None, str(exc)
         app.state.search = search or SearchService(settings)
         if app.state.search.state == "starting":
             app.state.search.start_background()
@@ -88,6 +95,11 @@ class FeedbackBody(BaseModel):
 
 
 # ── helpers ─────────────────────────────────────────────────────────────────────
+def _redact(url: str) -> str:
+    """A database URL without its password, for the log."""
+    return re.sub(r"//([^:/@]+):[^@]*@", r"//\1:***@", url)
+
+
 def _require_ready(request: Request) -> SearchService:
     search: SearchService = request.app.state.search
     if not search.ready:
@@ -142,7 +154,9 @@ def _routes(app: FastAPI) -> None:
     def health(request: Request) -> dict[str, Any]:
         """Liveness for Railway: 200 while the stores download, so the deploy isn't killed."""
         search: SearchService = request.app.state.search
-        return {"ok": True, "search": search.state, "detail": search.detail}
+        db_error = request.app.state.db_error
+        return {"ok": True, "search": search.state, "detail": search.detail,
+                "database": f"unavailable: {db_error}" if db_error else "ok"}
 
     @app.get("/status", dependencies=[AdminOnly])
     def status(request: Request) -> dict[str, Any]:

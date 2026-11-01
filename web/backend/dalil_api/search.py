@@ -33,6 +33,14 @@ class SearchService:
         threading.Thread(target=self._prepare, name="stores-prepare", daemon=True).start()
 
     def _prepare(self) -> None:
+        data_dir = self.settings.data_dir
+        if not data_dir.is_dir():
+            # Usually an unmounted volume or an unplugged drive. Never create it or
+            # download into it: that would fill whatever disk holds the mount point.
+            self.state = "failed"
+            self.detail = f"data volume missing: {data_dir} does not exist (is the volume mounted?)"
+            log.error("search cannot start: %s", self.detail)
+            return
         try:
             missing = self.missing_files()
             compact = self.settings.compact_file()

@@ -202,3 +202,27 @@ def test_answer_failure_is_logged_and_reported(client):
     assert events[-1] == {"type": "error", "stage": "answer", "message": "model gone"}
     q = client.get(f"/queries/{events[0]['query_id']}", headers=h).json()
     assert q["query"]["error"] == "model gone" and q["answer"] is None
+
+
+# ── outages ────────────────────────────────────────────────────────────────────
+def test_a_missing_data_volume_is_reported_and_not_created(tmp_path):
+    from dalil_api.search import SearchService
+
+    missing = tmp_path / "unplugged" / "data"
+    service = SearchService(Settings(data_dir=missing, database_url=f"sqlite:///{tmp_path}/t.sqlite",
+                                     hf_data_repo="someone/dalil"))
+    service._prepare()
+    assert service.state == "failed" and f"data volume missing: {missing}" in service.detail
+    assert not missing.exists() and not (tmp_path / "unplugged").exists()
+
+
+def test_the_api_starts_without_its_database(tmp_path):
+    settings = Settings(data_dir=tmp_path, database_url=f"sqlite:///{tmp_path}/nowhere/t.sqlite",
+                        admin_token="admin-secret", site_token="site-secret")
+    with TestClient(create_app(settings, FakeSearch())) as c:
+        health = c.get("/health").json()
+        assert health["search"] == "ready" and health["database"].startswith("unavailable:")
+        r = c.post("/ask", json={"question": "سؤال"},
+                   headers={"Authorization": "Bearer site-secret", "x-dalil-visitor": uuid.uuid4().hex})
+        assert r.status_code == 503 and "database is unavailable" in r.json()["detail"]
+        assert c.get("/admin/visitors", headers=ADMIN).status_code == 503

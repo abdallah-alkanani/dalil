@@ -40,7 +40,7 @@ export type AskEvent =
   | { type: "reset" }
   | { type: "delta"; text: string }
   | { type: "done"; model?: string; cost_usd?: number | null; latency_ms: number }
-  | { type: "error"; stage: "search" | "answer"; message: string };
+  | { type: "error"; stage: "service" | "limit" | "search" | "answer"; message: string };
 
 export const CATEGORY_LABELS: Record<Category, string> = {
   quran: "القرآن",

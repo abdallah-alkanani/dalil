@@ -36,12 +36,19 @@ def _require_token(authorization: str | None, expected: str, name: str) -> None:
         raise HTTPException(403, f"Not the {name}")
 
 
+def _require_db(request: Request) -> None:
+    if request.app.state.db is None:
+        raise HTTPException(503, f"The app database is unavailable: {request.app.state.db_error}")
+
+
 def require_admin(request: Request, authorization: str | None = Header(default=None)) -> None:
     _require_token(authorization, request.app.state.settings.admin_token, "ADMIN_TOKEN")
+    _require_db(request)
 
 
 def _visitor(request: Request, authorization: str | None, visitor_id: str | None, create: bool) -> dict[str, Any] | None:
     _require_token(authorization, request.app.state.settings.site_token, "SITE_TOKEN")
+    _require_db(request)
     visitor_id = (visitor_id or "").strip()
     if not 16 <= len(visitor_id) <= 100:
         raise HTTPException(400, "Missing visitor id")
