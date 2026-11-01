@@ -76,7 +76,7 @@ SOURCE_MARKER_SUBS: tuple[tuple[re.Pattern[str], str], ...] = (
 # expansions are the official Unicode names for these characters. Spelling them
 # out lets the tokenizer see the actual words, so 'صلى الله عليه وسلم' written as
 # a ligature matches the same phrase written normally. NFKC already expands ﷺ and
-# ﷻ; the U+FD40..FD4F block and ﷽/﷿ have no decomposition and need this table.
+# ﷻ; the U+FD40..FD4F block and ﷏/﷽/﷾/﷿ have no decomposition and need this table.
 HONORIFIC_EXPANSIONS = {
     "﵀": "رحمه الله", "﵁": "رضي الله عنه", "﵂": "رضي الله عنها",
     "﵃": "رضي الله عنهم", "﵄": "رضي الله عنهما", "﵅": "رضي الله عنهن",
@@ -85,9 +85,14 @@ HONORIFIC_EXPANSIONS = {
     "﵌": "صلى الله عليه وآله وسلم", "﵍": "عليها السلام",
     "﵎": "تبارك وتعالى", "﵏": "رحمهم الله",
     "ﷺ": "صلى الله عليه وسلم", "ﷻ": "جل جلاله",
-    "﷽": "بسم الله الرحمن الرحيم", "﷿": "عز وجل",
+    "﷏": "سلامه علينا", "﷽": "بسم الله الرحمن الرحيم",
+    "﷾": "سبحانه وتعالى", "﷿": "عز وجل",
 }
 HONORIFIC_RE = re.compile("[" + "".join(HONORIFIC_EXPANSIONS) + "]")
+# The ligatures Unicode 14 added (﵀..﵏, ﷏, ﷾, ﷿). Most fonts, Amiri and IBM Plex
+# Sans Arabic among them, have no glyph for these, so a reader sees a box; ﷺ, ﷻ
+# and ﷽ are older and drawn by both.
+UNDRAWN_HONORIFIC_RE = re.compile("[" + "".join(sorted(set(HONORIFIC_EXPANSIONS) - set("ﷺﷻ﷽"))) + "]")
 # Cheap pre-check. Latin letters are rare in this corpus, so their presence is a
 # good signal that a marker (AUTO, CHECK, msN, font-family, a URL) may be there.
 MARKER_HINT_RE = re.compile(r"[#@¬_*=$%A-Za-z]|\.\s*\.\s*\.|[-–—]{6,}")
@@ -115,6 +120,28 @@ def expand_private_use(text: str) -> str:
     if not text or not PUA_RE.search(text):
         return text
     return PUA_RE.sub(lambda m: PUA_EXPANSIONS.get(m.group(0), " "), text)
+
+
+def expand_undrawn_honorifics(text: str) -> str:
+    """Spell out the honorific ligatures fonts cannot draw, for text shown to readers.
+
+    A space is added only where the phrase would otherwise run into a word.
+    """
+    if not text or not UNDRAWN_HONORIFIC_RE.search(text):
+        return text
+
+    def spell(m: re.Match[str]) -> str:
+        start, end = m.span()
+        before = " " if start > 0 and _is_word_char(text[start - 1]) else ""
+        after = " " if end < len(text) and _is_word_char(text[end]) else ""
+        return before + HONORIFIC_EXPANSIONS[m.group(0)] + after
+
+    return UNDRAWN_HONORIFIC_RE.sub(spell, text)
+
+
+def _is_word_char(ch: str) -> bool:
+    # Letters, digits and the tashkeel that sits on letters.
+    return ch.isalnum() or "\u064b" <= ch <= "\u065f" or ch == "\u0670"
 
 
 def strip_source_markers(text: str) -> str:

@@ -106,6 +106,19 @@ def test_search_logs_and_returns_grade(client):
     assert q["query"]["results"] == [{"parent_id": "p1", "citation": "جامع الترمذي، حديث 1"}]
 
 
+def test_search_spells_out_ligatures_fonts_cannot_draw(client):
+    client.fake_search.query = lambda question, **kw: {"status": {}, "results": [{
+        "parent_id": "p1", "citation": "فتاوى نور على الدرب",
+        "section_path": ["فتاوى نور على الدرب", "باب ﷾"],
+        "text_for_synthesis": "فليسأل الله ﷾ على الصفات المعروفة",
+        "neighbours": [{"offset": 1, "parent_id": "p2", "citation": None, "text": "قال ﵁"}],
+    }]}
+    r = client.post("/search", json={"question": "صلاة الحاجة"}, headers=visitor(client)).json()
+    assert r["results"][0]["text"] == "فليسأل الله سبحانه وتعالى على الصفات المعروفة"
+    assert r["results"][0]["section_path"][1] == "باب سبحانه وتعالى"
+    assert r["results"][0]["neighbours"][0]["text"] == "قال رضي الله عنه"
+
+
 def fake_run(question, search, **kw):
     found = search("حكم الطهارة")
     passages = [{"n": i, **r} for i, r in enumerate(found, 1)]
