@@ -18,7 +18,7 @@ visitors and questions.
 
 | | |
 |---|---|
-| `GET /health` | liveness; `search` is `downloading`, `building`, `loading`, `ready` or `failed` |
+| `GET /health` | liveness, always 200; `search` is `downloading`, `building`, `loading`, `ready` or `failed` (with `detail`), and `database` is `ok` or `unavailable: <reason>` |
 | `GET /visitor`, `POST /visitor` | the visitor's name; `{name}` sets it, `""` takes it back |
 | `POST /search` | `{question, n_results, categories?, query_planning, rerank, expand_neighbours}` |
 | `POST /ask` | `{question, categories?}` -> the answer as NDJSON events, below |
@@ -66,6 +66,12 @@ Every search and answer reports what actually ran in `status`: `retrieval`
 | `HF_DATA_REPO`, `HF_TOKEN`, `HF_DATA_PREFIX`, `HF_DATA_REVISION`, `HF_REPO_TYPE` | where missing stores are downloaded from on boot; `HF_REPO_TYPE` defaults to `dataset` |
 | `GLOBAL_DAILY_ASKS`, `DAILY_SPEND_CAP_USD` | questions per UTC day for everyone together, 1000; reported answer cost per UTC day, 10; ollama.com reports no cost, so with the default endpoint `DAILY_SPEND_CAP_USD` never triggers |
 | `CORS_ORIGINS` | comma-separated origins allowed to call the API from a browser |
+
+The API never creates `DALIL_DATA_DIR`. When it does not exist, which usually means the
+volume is not mounted, search fails at once with `detail` "data volume missing: …" and a
+log line saying so; nothing is downloaded. If the app's database cannot be opened (for
+example SQLite under a missing data directory), the API still starts, `/health` reports
+`database: unavailable: …`, and visitor and admin calls answer 503.
 
 Stores in `/data/db`: `faiss_metadata.sqlite`, `parents.sqlite`, `bm25.sqlite` and
 `dense_faiss_ar.index`, downloaded from `HF_DATA_REPO` when missing. With

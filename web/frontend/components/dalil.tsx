@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { library } from "@/lib/library";
 import { PassagesContext } from "@/lib/passages";
 import { CATEGORY_LABELS, type AskEvent, type Category, type Passage, type Retrieval } from "@/lib/types";
+import { SERVICE_TEXT, SITE_UNREACHABLE_TEXT, serviceState, type ServiceState } from "@/lib/service";
 import { SourceDrawer } from "./source_drawer";
 import { SourceList } from "./source_list";
 
@@ -56,6 +57,7 @@ function Research() {
   const [drawer, setDrawer] = useState<{ turnId: number; n: number } | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const busy = turns.some((t) => t.phase === "searching" || t.phase === "answering");
+  const service = useServiceState();
   const endRef = useRef<HTMLDivElement>(null);
   const turnSeq = useRef(0);
 
@@ -78,6 +80,12 @@ function Research() {
           body: JSON.stringify({ question: q, categories: cats }),
         });
         if (!res.body) throw new Error(`HTTP ${res.status}`);
+        const isStream = (res.headers.get("content-type") ?? "").includes("ndjson");
+        if (!isStream) {
+          // Not the answer stream: an error page from the site or a proxy in front of it.
+          patch(id, () => ({ phase: "error", error: SERVICE_TEXT.unreachable }));
+          return;
+        }
         const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
         let buf = "";
         for (;;) {
@@ -89,7 +97,12 @@ function Research() {
             const line = buf.slice(0, nl);
             buf = buf.slice(nl + 1);
             if (!line.trim()) continue;
-            const e = JSON.parse(line) as AskEvent;
+            let e: AskEvent;
+            try {
+              e = JSON.parse(line) as AskEvent;
+            } catch {
+              e = { type: "error", stage: "service", message: SERVICE_TEXT.unreachable };
+            }
             if (e.type === "start") {
               patch(id, () => ({ retrieval: { query_id: e.query_id, searches: [], passages: [] } }));
             } else if (e.type === "search") {
@@ -112,8 +125,9 @@ function Research() {
           }
         }
         patch(id, (t) => (t.phase === "answering" || t.phase === "searching" ? { phase: "done" } : {}));
-      } catch (err) {
-        patch(id, () => ({ phase: "error", error: String(err) }));
+      } catch {
+        // The browser could not reach the site itself (connection lost, site down).
+        patch(id, () => ({ phase: "error", error: SITE_UNREACHABLE_TEXT }));
       }
     },
     [categories, patch],
@@ -137,10 +151,17 @@ function Research() {
       </header>
 
       <main className={`thread ${turns.length ? "" : "is-empty"}`}>
-        <ServiceNotice />
+        <ServiceNotice state={service} />
         {turns.length === 0 ? (
           <Welcome>
-            <Composer busy={busy} categories={categories} setCategories={setCategories} onAsk={(q) => ask(q)} centered />
+            <Composer
+              busy={busy}
+              down={service !== "ready"}
+              categories={categories}
+              setCategories={setCategories}
+              onAsk={(q) => ask(q)}
+              centered
+            />
           </Welcome>
         ) : (
           turns.map((t) => (
@@ -159,7 +180,13 @@ function Research() {
       </main>
 
       {turns.length ? (
-        <Composer busy={busy} categories={categories} setCategories={setCategories} onAsk={(q) => ask(q)} />
+        <Composer
+          busy={busy}
+          down={service !== "ready"}
+          categories={categories}
+          setCategories={setCategories}
+          onAsk={(q) => ask(q)}
+        />
       ) : null}
 
       {drawerPassage && drawerTurn?.retrieval ? (
@@ -175,16 +202,16 @@ function Research() {
   );
 }
 
-/** Says something only when search is not available yet or not at all. */
-function ServiceNotice() {
-  const [state, setState] = useState<string>("ready");
+/** Whether search can answer, from the site's /api/health, checked every 15 seconds. */
+function useServiceState(): ServiceState {
+  const [state, setState] = useState<ServiceState>("ready");
   useEffect(() => {
     let alive = true;
     const tick = () =>
-      fetch("/api/health")
+      fetch("/api/health", { cache: "no-store" })
         .then((r) => r.json())
-        .then((d) => alive && setState(d.search ?? "unknown"))
-        .catch(() => alive && setState("offline"));
+        .then((d) => alive && setState(serviceState(d.search)))
+        .catch(() => alive && setState("unreachable"));
     tick();
     const t = setInterval(tick, 15000);
     return () => {
@@ -192,12 +219,17 @@ function ServiceNotice() {
       clearInterval(t);
     };
   }, []);
+  return state;
+}
+
+/** Says something only when search cannot answer: what is down, not "try again". */
+function ServiceNotice({ state }: { state: ServiceState }) {
   if (state === "ready") return null;
-  const text =
-    state === "offline" ? "تعذّر الاتصال بالخادم. أعد المحاولة بعد قليل."
-    : state === "failed" ? "تعذّر تحميل قاعدة البيانات، فالبحث متوقف الآن."
-    : "قاعدة البيانات قيد التحميل، والبحث متوقف حتى يكتمل.";
-  return <div className={`notice ${state === "offline" || state === "failed" ? "is-down" : ""}`}>{text}</div>;
+  return (
+    <div className={`notice ${state === "loading" ? "" : "is-down"}`} role="status">
+      {SERVICE_TEXT[state]}
+    </div>
+  );
 }
 
 /**
@@ -407,9 +439,11 @@ function TurnFooter({ turn, queryId, onRated }: { turn: Turn; queryId: number; o
 }
 
 function Composer({
-  busy, categories, setCategories, onAsk, centered = false,
+  busy, down, categories, setCategories, onAsk, centered = false,
 }: {
   busy: boolean;
+  /** Search cannot answer now; the notice above says why. */
+  down: boolean;
   categories: Category[];
   setCategories: (c: Category[]) => void;
   onAsk: (q: string) => void;
@@ -443,7 +477,7 @@ function Composer({
     el.style.height = `${Math.min(el.scrollHeight, window.innerWidth < 640 ? 120 : 180)}px`;
   }, [text]);
   const submit = () => {
-    if (busy || text.trim().length < 2) return;
+    if (busy || down || text.trim().length < 2) return;
     onAsk(text);
     setText("");
   };
@@ -488,8 +522,8 @@ function Composer({
               </button>
             ))}
           </div>
-          <Button variant="primary" size="medium" disabled={busy || text.trim().length < 2} onClick={submit}>
-            {busy ? "جارٍ…" : "اسأل"}
+          <Button variant="primary" size="medium" disabled={busy || down || text.trim().length < 2} onClick={submit}>
+            {busy ? "جارٍ…" : down ? "البحث متوقف" : "اسأل"}
           </Button>
         </div>
       </div>

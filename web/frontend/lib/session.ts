@@ -6,6 +6,7 @@
  * into a country and does not keep.
  */
 import { cookies, headers } from "next/headers";
+import { SERVICE_TEXT } from "./service";
 
 export const API = process.env.DALIL_API_URL ?? "http://localhost:8000";
 const COOKIE = "dalil_visitor";
@@ -34,8 +35,20 @@ async function whereFrom(): Promise<Record<string, string>> {
   return ip ? { "x-dalil-ip": ip } : {};
 }
 
-/** A call to the API for this visitor. */
+/**
+ * A call to the API for this visitor. When the API cannot be reached at all, the
+ * answer is a 503 with ``service: "unreachable"`` instead of a thrown error.
+ */
 export async function api(path: string, init: RequestInit = {}): Promise<Response> {
+  try {
+    return await reach(path, init);
+  } catch (err) {
+    console.error(`dalil API unreachable at ${API}: ${err}`);
+    return Response.json({ detail: SERVICE_TEXT.unreachable, service: "unreachable" }, { status: 503 });
+  }
+}
+
+async function reach(path: string, init: RequestInit): Promise<Response> {
   return fetch(`${API}${path}`, {
     ...init,
     headers: {
