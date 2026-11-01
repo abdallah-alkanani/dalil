@@ -117,8 +117,9 @@ class SearchService:
 def compact_result(result: dict[str, Any], max_chars: int) -> dict[str, Any]:
     """The fields a client needs from one engine result.
 
-    Text and citations have their undrawn honorific ligatures spelled out, so the
-    reader sees words, not boxes, and the answer model quotes what the reader sees.
+    Text, citations and section headings have their undrawn honorific ligatures
+    spelled out, so the reader sees words, not boxes, and the answer model quotes
+    what the reader sees.
     """
     shown = expand_undrawn_honorifics
     text = result.get("text_for_synthesis") or result.get("text_original") or ""
@@ -127,7 +128,7 @@ def compact_result(result: dict[str, Any], max_chars: int) -> dict[str, Any]:
         "citation": shown(result.get("citation")),
         "category": result.get("category"),
         "book_id": result.get("book_id"),
-        "section_path": result.get("section_path") or [],
+        "section_path": [shown(s) for s in result.get("section_path") or []],
         "page_number": result.get("page_number"),
         "refs": result.get("refs") or {},
         # al-Albani's grade, stored for the four Sunan only.
