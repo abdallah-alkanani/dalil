@@ -11,6 +11,8 @@ Arabic or English. The answer model searches the books itself, in Arabic, then a
 the scholars' own words: every statement names its scholar and book, every quote is pasted
 from its passage, and every passage opens in full. No sign-in.
 
+**Source code: [github.com/abdallah-alkanani/dalil](https://github.com/abdallah-alkanani/dalil).**
+
 Everything it searches is ready to download from
 [Hugging Face](https://huggingface.co/datasets/Alkanani/dalil): the books in their
 original and cleaned form, the search databases, and 927,744 precomputed

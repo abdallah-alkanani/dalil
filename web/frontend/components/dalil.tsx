@@ -2,6 +2,7 @@
 
 import { Renderer, type ActionEvent } from "@openuidev/react-lang";
 import { Button, ThemeProvider, createTheme } from "@openuidev/react-ui";
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { library } from "@/lib/library";
 import { PassagesContext } from "@/lib/passages";
@@ -129,6 +130,9 @@ function Research() {
         </button>
         <span className="topbar-sub">من القرآن والسنة وأقوال أهل العلم</span>
         <span className="topbar-spacer" />
+        <Link className="topbar-about" href="/about">
+          عن دليل
+        </Link>
         <VisitorName />
       </header>
 
