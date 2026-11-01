@@ -13,6 +13,8 @@ import threading
 import time
 from typing import Any
 
+from dalil.s4_extract.text import expand_undrawn_honorifics
+
 from .config import Settings
 
 log = logging.getLogger("dalil_api.search")
@@ -113,11 +115,16 @@ class SearchService:
 
 
 def compact_result(result: dict[str, Any], max_chars: int) -> dict[str, Any]:
-    """The fields a client needs from one engine result."""
+    """The fields a client needs from one engine result.
+
+    Text and citations have their undrawn honorific ligatures spelled out, so the
+    reader sees words, not boxes, and the answer model quotes what the reader sees.
+    """
+    shown = expand_undrawn_honorifics
     text = result.get("text_for_synthesis") or result.get("text_original") or ""
     return {
         "parent_id": result.get("parent_id"),
-        "citation": result.get("citation"),
+        "citation": shown(result.get("citation")),
         "category": result.get("category"),
         "book_id": result.get("book_id"),
         "section_path": result.get("section_path") or [],
@@ -125,12 +132,12 @@ def compact_result(result: dict[str, Any], max_chars: int) -> dict[str, Any]:
         "refs": result.get("refs") or {},
         # al-Albani's grade, stored for the four Sunan only.
         "grade": ((result.get("refs") or {}).get("hadith") or {}).get("albani_grade"),
-        "text": text[:max_chars] if max_chars else text,
+        "text": shown(text[:max_chars] if max_chars else text),
         "truncated": bool(max_chars) and len(text) > max_chars,
         "retrieval_sources": result.get("retrieval_sources") or [],
         "neighbours": [
-            {"parent_id": n.get("parent_id"), "offset": n.get("offset"), "citation": n.get("citation"),
-             "text": (n.get("text") or "")[:max_chars // 2] if max_chars else n.get("text") or ""}
+            {"parent_id": n.get("parent_id"), "offset": n.get("offset"), "citation": shown(n.get("citation")),
+             "text": shown((n.get("text") or "")[:max_chars // 2] if max_chars else n.get("text") or "")}
             for n in result.get("neighbours") or []
         ],
     }
